@@ -6,3 +6,5 @@ build/
 .env
 *.db
 .venv/
+results.json
+*.json
