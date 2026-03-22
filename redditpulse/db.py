@@ -119,6 +119,11 @@ def save_analysis(conn: sqlite3.Connection, topic_id: int, num_comments: int,
     return cur.lastrowid
 
 
+def delete_analyses(conn: sqlite3.Connection, topic_id: int) -> None:
+    conn.execute("DELETE FROM analyses WHERE topic_id = ?", (topic_id,))
+    conn.commit()
+
+
 def get_latest_analysis(conn: sqlite3.Connection, topic_id: int) -> dict | None:
     row = conn.execute(
         "SELECT * FROM analyses WHERE topic_id = ? ORDER BY run_at DESC LIMIT 1",

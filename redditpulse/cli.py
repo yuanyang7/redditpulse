@@ -27,7 +27,8 @@ def cmd_search(args):
     if topic and args.reset_comments:
         conn.execute("DELETE FROM comments WHERE topic_id = ?", (topic["id"],))
         conn.commit()
-        console.print(f"[yellow]Cleared old comments for '{topic_name}'. Keywords kept.[/yellow]")
+        db.delete_analyses(conn, topic["id"])
+        console.print(f"[yellow]Cleared old comments and analyses for '{topic_name}'. Keywords kept.[/yellow]")
     elif topic and not args.refresh:
         console.print(f"Topic [bold]{topic_name}[/bold] already exists with {_count_comments(conn, topic['id'])} comments.")
         console.print("Use --refresh to add more comments, or --reset-comments to clear and re-fetch.")
@@ -81,6 +82,10 @@ def cmd_analyze(args):
     if not topic:
         console.print(f"[red]Topic '{args.topic}' not found. Run 'search' first.[/red]")
         sys.exit(1)
+
+    if args.reset_analyses:
+        db.delete_analyses(conn, topic["id"])
+        console.print(f"[yellow]Cleared old analyses for '{args.topic}'.[/yellow]")
 
     comments = db.get_comments_for_topic(conn, topic["id"], limit=args.limit)
     if not comments:
@@ -284,6 +289,7 @@ def main():
     p_analyze = sub.add_parser("analyze", help="Analyze stored comments")
     p_analyze.add_argument("topic", help="Topic name to analyze")
     p_analyze.add_argument("--limit", "-l", type=int, default=500, help="Max comments to analyze")
+    p_analyze.add_argument("--reset-analyses", action="store_true", help="Delete old analysis results before running")
     p_analyze.add_argument("--output", "-o", help="Save full JSON results to file")
     p_analyze.set_defaults(func=cmd_analyze)
 
