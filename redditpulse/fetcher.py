@@ -41,6 +41,7 @@ def search_comments(
 
     seen_ids: set[str] = set()
     comments: list[dict] = []
+    topic_words, context_words = _extract_word_groups(keywords)
 
     for keyword in keywords:
         for submission in subreddit.search(keyword, sort=sort, time_filter=time_filter, limit=limit_per_keyword):
@@ -48,12 +49,15 @@ def search_comments(
             for comment in submission.comments.list():
                 if comment.id in seen_ids:
                     continue
-                seen_ids.add(comment.id)
 
-                # Only keep comments that are relevant (contain at least one keyword word)
+                # Require both a topic word AND a context word for relevance
                 body_lower = comment.body.lower()
-                if not any(w.lower() in body_lower for w in _extract_words(keywords)):
+                has_topic = any(w in body_lower for w in topic_words)
+                has_context = any(w in body_lower for w in context_words)
+                if not (has_topic and has_context):
                     continue
+
+                seen_ids.add(comment.id)
 
                 comments.append({
                     "reddit_id": comment.id,
@@ -68,12 +72,21 @@ def search_comments(
     return comments
 
 
-def _extract_words(keywords: list[str]) -> list[str]:
-    """Extract individual significant words from keyword phrases for filtering."""
+def _extract_word_groups(keywords: list[str]) -> tuple[set[str], set[str]]:
+    """Split keywords into topic words and context words for AND-style filtering.
+
+    A comment must contain at least one word from each group to be relevant.
+    """
+    topic_words = {"ai", "artificial", "intelligence", "machine", "learning", "algorithm",
+                   "facial", "recognition", "model", "llm", "chatgpt", "deepfake", "neural"}
+    context_words = {"privacy", "surveillance", "data", "personal", "rights", "ethics",
+                     "consent", "tracking", "collection", "security", "breach", "biometric"}
+
     stopwords = {"the", "a", "an", "and", "or", "of", "in", "on", "is", "it", "to", "for", "with", "about"}
-    words = set()
     for kw in keywords:
-        for word in kw.split():
-            if word.lower() not in stopwords and len(word) > 2:
-                words.add(word)
-    return list(words)
+        words = [w.lower() for w in kw.split() if w.lower() not in stopwords and len(w) > 2]
+        if words:
+            topic_words.add(words[0])
+            context_words.update(words[1:])
+
+    return topic_words, context_words
