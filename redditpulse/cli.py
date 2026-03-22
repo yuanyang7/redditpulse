@@ -129,6 +129,29 @@ def cmd_topics(args):
     console.print(table)
 
 
+def cmd_export(args):
+    """Export the last saved analysis from DB to JSON — no API call."""
+    conn = db.get_connection()
+    db.init_db(conn)
+
+    topic = db.get_topic(conn, args.topic)
+    if not topic:
+        console.print(f"[red]Topic '{args.topic}' not found.[/red]")
+        sys.exit(1)
+
+    analysis = db.get_latest_analysis(conn, topic["id"])
+    if not analysis:
+        console.print(f"[red]No analysis found for '{args.topic}'. Run 'analyze' first.[/red]")
+        sys.exit(1)
+
+    result = json.loads(analysis["raw_result"])
+    with open(args.output, "w") as f:
+        json.dump(result, f, indent=2)
+
+    console.print(f"[green]Exported analysis from {analysis['run_at'][:10]} to {args.output}[/green]")
+    _display_results(args.topic, result)
+
+
 def _display_results(topic: str, result: dict):
     """Pretty-print analysis results."""
     s = result["sentiment"]
@@ -213,6 +236,12 @@ def main():
     p_analyze.add_argument("--limit", "-l", type=int, default=500, help="Max comments to analyze")
     p_analyze.add_argument("--output", "-o", help="Save full JSON results to file")
     p_analyze.set_defaults(func=cmd_analyze)
+
+    # export
+    p_export = sub.add_parser("export", help="Export last saved analysis to JSON without re-running Claude")
+    p_export.add_argument("topic", help="Topic name to export")
+    p_export.add_argument("--output", "-o", default="results.json", help="Output file (default: results.json)")
+    p_export.set_defaults(func=cmd_export)
 
     # topics
     p_topics = sub.add_parser("topics", help="List all tracked topics")
