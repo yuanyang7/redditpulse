@@ -100,10 +100,10 @@ def analyze_themes(topic: str, comments: list[dict]) -> dict:
     return json.loads(text[start:end])
 
 
-def run_full_analysis(topic: str, comments: list[dict]) -> dict:
-    """Run both sentiment and theme analysis. Returns combined result."""
+def run_full_analysis(topic: str, comments: list[dict], skip_claude: bool = False) -> dict:
+    """Run sentiment analysis, and optionally theme analysis via Claude."""
     sentiment = analyze_sentiment(comments)
-    themes = analyze_themes(topic, comments)
+    themes = analyze_themes(topic, comments) if not skip_claude else {}
     return {
         "sentiment": {k: v for k, v in sentiment.items() if k != "scores"},
         "themes": themes,

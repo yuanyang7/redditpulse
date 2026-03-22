@@ -92,9 +92,12 @@ def cmd_analyze(args):
         console.print("[red]No comments found for this topic.[/red]")
         sys.exit(1)
 
-    console.print(f"[bold blue]Analyzing {len(comments)} comments for:[/bold blue] {args.topic}")
+    if args.sentiment_only:
+        console.print(f"[bold blue]Running sentiment-only analysis (no Claude) for:[/bold blue] {args.topic}")
+    else:
+        console.print(f"[bold blue]Analyzing {len(comments)} comments for:[/bold blue] {args.topic}")
 
-    result = analyzer.run_full_analysis(args.topic, comments)
+    result = analyzer.run_full_analysis(args.topic, comments, skip_claude=args.sentiment_only)
 
     # Save to DB
     db.save_analysis(
@@ -290,6 +293,7 @@ def main():
     p_analyze.add_argument("topic", help="Topic name to analyze")
     p_analyze.add_argument("--limit", "-l", type=int, default=500, help="Max comments to analyze")
     p_analyze.add_argument("--reset-analyses", action="store_true", help="Delete old analysis results before running")
+    p_analyze.add_argument("--sentiment-only", action="store_true", help="Run VADER sentiment only, skip Claude API call")
     p_analyze.add_argument("--output", "-o", help="Save full JSON results to file")
     p_analyze.set_defaults(func=cmd_analyze)
 
