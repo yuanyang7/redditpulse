@@ -9,7 +9,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from . import db, fetcher, analyzer
+from . import db, fetcher, fetcher_public, analyzer
 
 console = Console()
 
@@ -41,15 +41,25 @@ def cmd_search(args):
         console.print(f"[green]Using existing keywords:[/green] {', '.join(keywords)}")
 
     # Fetch comments
-    console.print("[bold blue]Fetching comments from Reddit...[/bold blue]")
-    reddit = fetcher.get_reddit()
-    comments = fetcher.search_comments(
-        reddit,
-        keywords,
-        subreddits=args.subreddits.split(",") if args.subreddits else None,
-        limit_per_keyword=args.limit,
-        time_filter=args.time,
-    )
+    subreddits = args.subreddits.split(",") if args.subreddits else None
+    if args.public:
+        console.print("[bold blue]Fetching comments via public JSON API (no auth)...[/bold blue]")
+        comments = fetcher_public.search_comments(
+            keywords,
+            subreddits=subreddits,
+            limit_per_keyword=min(args.limit, 25),
+            time_filter=args.time,
+        )
+    else:
+        console.print("[bold blue]Fetching comments via PRAW (OAuth)...[/bold blue]")
+        reddit = fetcher.get_reddit()
+        comments = fetcher.search_comments(
+            reddit,
+            keywords,
+            subreddits=subreddits,
+            limit_per_keyword=args.limit,
+            time_filter=args.time,
+        )
     console.print(f"[green]Found {len(comments)} relevant comments[/green]")
 
     # Store
@@ -194,6 +204,7 @@ def main():
     p_search.add_argument("--limit", "-l", type=int, default=30, help="Submissions per keyword (default: 30)")
     p_search.add_argument("--time", "-t", default="month", choices=["hour", "day", "week", "month", "year", "all"])
     p_search.add_argument("--refresh", action="store_true", help="Fetch more comments for existing topic")
+    p_search.add_argument("--public", action="store_true", help="Use public JSON API (no Reddit credentials needed)")
     p_search.set_defaults(func=cmd_search)
 
     # analyze
