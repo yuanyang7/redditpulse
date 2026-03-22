@@ -211,6 +211,51 @@ def _display_results(topic: str, result: dict):
         ))
 
 
+def cmd_browse(args):
+    """Browse comments filtered by sentiment label."""
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    vader = SentimentIntensityAnalyzer()
+
+    conn = db.get_connection()
+    db.init_db(conn)
+
+    topic = db.get_topic(conn, args.topic)
+    if not topic:
+        console.print(f"[red]Topic '{args.topic}' not found.[/red]")
+        sys.exit(1)
+
+    comments = db.get_comments_for_topic(conn, topic["id"], limit=2000)
+
+    # Filter by sentiment
+    def label(score):
+        if score >= 0.05:
+            return "positive"
+        elif score <= -0.05:
+            return "negative"
+        return "neutral"
+
+    filtered = []
+    for c in comments:
+        compound = vader.polarity_scores(c["body"])["compound"]
+        if label(compound) == args.sentiment:
+            filtered.append((compound, c))
+
+    # Sort strongest sentiment first
+    filtered.sort(key=lambda x: abs(x[0]), reverse=True)
+    filtered = filtered[:args.limit]
+
+    color = {"positive": "green", "negative": "red", "neutral": "yellow"}[args.sentiment]
+    console.print(f"\n[bold]{args.sentiment.upper()} comments for '{args.topic}'[/bold] ({len(filtered)} shown)\n")
+
+    for compound, c in filtered:
+        console.print(Panel(
+            c["body"],
+            title=f"[{color}]score:{c['score']}  vader:{compound:+.2f}  r/{c['subreddit']}[/{color}]",
+            border_style=color,
+        ))
+        console.print()
+
+
 def _count_comments(conn, topic_id: int) -> int:
     row = conn.execute("SELECT COUNT(*) as cnt FROM comments WHERE topic_id = ?", (topic_id,)).fetchone()
     return row["cnt"]
@@ -242,6 +287,14 @@ def main():
     p_export.add_argument("topic", help="Topic name to export")
     p_export.add_argument("--output", "-o", default="results.json", help="Output file (default: results.json)")
     p_export.set_defaults(func=cmd_export)
+
+    # browse
+    p_browse = sub.add_parser("browse", help="Browse comments filtered by sentiment")
+    p_browse.add_argument("topic", help="Topic name")
+    p_browse.add_argument("--sentiment", "-s", default="negative", choices=["positive", "negative", "neutral"],
+                          help="Sentiment to filter by (default: negative)")
+    p_browse.add_argument("--limit", "-l", type=int, default=20, help="Max comments to show (default: 20)")
+    p_browse.set_defaults(func=cmd_browse)
 
     # topics
     p_topics = sub.add_parser("topics", help="List all tracked topics")
