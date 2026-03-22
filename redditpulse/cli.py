@@ -24,9 +24,13 @@ def cmd_search(args):
     # Check if topic already exists
     topic = db.get_topic(conn, topic_name)
 
-    if topic and not args.refresh:
+    if topic and args.reset_comments:
+        conn.execute("DELETE FROM comments WHERE topic_id = ?", (topic["id"],))
+        conn.commit()
+        console.print(f"[yellow]Cleared old comments for '{topic_name}'. Keywords kept.[/yellow]")
+    elif topic and not args.refresh:
         console.print(f"Topic [bold]{topic_name}[/bold] already exists with {_count_comments(conn, topic['id'])} comments.")
-        console.print("Use --refresh to fetch more comments.")
+        console.print("Use --refresh to add more comments, or --reset-comments to clear and re-fetch.")
         return
 
     # Generate keywords via Claude
@@ -272,6 +276,7 @@ def main():
     p_search.add_argument("--limit", "-l", type=int, default=30, help="Submissions per keyword (default: 30)")
     p_search.add_argument("--time", "-t", default="month", choices=["hour", "day", "week", "month", "year", "all"])
     p_search.add_argument("--refresh", action="store_true", help="Fetch more comments for existing topic")
+    p_search.add_argument("--reset-comments", action="store_true", help="Delete old comments and re-fetch (keeps keywords)")
     p_search.add_argument("--public", action="store_true", help="Use public JSON API (no Reddit credentials needed)")
     p_search.set_defaults(func=cmd_search)
 
