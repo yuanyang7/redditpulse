@@ -1,0 +1,19 @@
+[project]
+name = "redditpulse"
+version = "0.1.0"
+description = "Fetch and analyze Reddit comments on any topic"
+requires-python = ">=3.10"
+dependencies = [
+    "praw>=7.7",
+    "vaderSentiment>=3.3",
+    "anthropic>=0.40",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+]
+
+[project.scripts]
+redditpulse = "redditpulse.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
