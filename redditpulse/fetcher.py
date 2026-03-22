@@ -1,0 +1,79 @@
+"""Fetch Reddit comments using PRAW based on keywords."""
+
+import os
+import praw
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def get_reddit() -> praw.Reddit:
+    return praw.Reddit(
+        client_id=os.environ["REDDIT_CLIENT_ID"],
+        client_secret=os.environ["REDDIT_CLIENT_SECRET"],
+        user_agent=os.environ.get("REDDIT_USER_AGENT", "redditpulse/0.1"),
+    )
+
+
+def search_comments(
+    reddit: praw.Reddit,
+    keywords: list[str],
+    subreddits: list[str] | None = None,
+    limit_per_keyword: int = 50,
+    sort: str = "relevance",
+    time_filter: str = "month",
+) -> list[dict]:
+    """Search Reddit for submissions matching keywords, then collect their comments.
+
+    Args:
+        reddit: PRAW Reddit instance.
+        keywords: List of search terms.
+        subreddits: Optional list of subreddits to search within. Defaults to "all".
+        limit_per_keyword: Max submissions to fetch per keyword.
+        sort: Sort order for search (relevance, hot, top, new, comments).
+        time_filter: Time filter (hour, day, week, month, year, all).
+
+    Returns:
+        List of comment dicts ready for db.insert_comments().
+    """
+    target = "+".join(subreddits) if subreddits else "all"
+    subreddit = reddit.subreddit(target)
+
+    seen_ids: set[str] = set()
+    comments: list[dict] = []
+
+    for keyword in keywords:
+        for submission in subreddit.search(keyword, sort=sort, time_filter=time_filter, limit=limit_per_keyword):
+            submission.comments.replace_more(limit=0)  # skip "load more" stubs
+            for comment in submission.comments.list():
+                if comment.id in seen_ids:
+                    continue
+                seen_ids.add(comment.id)
+
+                # Only keep comments that are relevant (contain at least one keyword word)
+                body_lower = comment.body.lower()
+                if not any(w.lower() in body_lower for w in _extract_words(keywords)):
+                    continue
+
+                comments.append({
+                    "reddit_id": comment.id,
+                    "subreddit": str(comment.subreddit),
+                    "author": str(comment.author) if comment.author else "[deleted]",
+                    "body": comment.body,
+                    "score": comment.score,
+                    "permalink": f"https://reddit.com{comment.permalink}",
+                    "created_utc": comment.created_utc,
+                })
+
+    return comments
+
+
+def _extract_words(keywords: list[str]) -> list[str]:
+    """Extract individual significant words from keyword phrases for filtering."""
+    stopwords = {"the", "a", "an", "and", "or", "of", "in", "on", "is", "it", "to", "for", "with", "about"}
+    words = set()
+    for kw in keywords:
+        for word in kw.split():
+            if word.lower() not in stopwords and len(word) > 2:
+                words.add(word)
+    return list(words)
