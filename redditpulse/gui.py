@@ -7,7 +7,14 @@ import sys
 import streamlit as st
 import pandas as pd
 
-from . import core
+try:
+    from . import core
+except ImportError:
+    # Running directly via `streamlit run` — add package root to path
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from redditpulse import core
 
 
 # ---------------------------------------------------------------------------
