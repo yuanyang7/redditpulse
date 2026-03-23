@@ -9,10 +9,13 @@ dependencies = [
     "anthropic>=0.40",
     "python-dotenv>=1.0",
     "rich>=13.0",
+    "streamlit>=1.30",
+    "pandas>=2.0",
 ]
 
 [project.scripts]
 redditpulse = "redditpulse.cli:main"
+redditpulse-gui = "redditpulse.gui:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

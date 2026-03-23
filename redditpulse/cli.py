@@ -7,109 +7,65 @@ import sys
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.text import Text
 
-from . import db, fetcher, fetcher_public, analyzer
+from . import core
 
 console = Console()
 
 
 def cmd_search(args):
     """Create/update a topic: generate keywords, fetch comments, store them."""
-    conn = db.get_connection()
-    db.init_db(conn)
+    try:
+        console.print(f"[bold blue]Searching for:[/bold blue] {args.topic}")
+        result = core.search_topic(
+            topic=args.topic,
+            subreddits=args.subreddits.split(",") if args.subreddits else None,
+            limit=args.limit,
+            time_filter=args.time,
+            public=args.public,
+            refresh=args.refresh,
+            reset_comments=args.reset_comments,
+        )
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
 
-    topic_name = args.topic
-
-    # Check if topic already exists
-    topic = db.get_topic(conn, topic_name)
-
-    if topic and args.reset_comments:
-        conn.execute("DELETE FROM comments WHERE topic_id = ?", (topic["id"],))
-        conn.commit()
-        db.delete_analyses(conn, topic["id"])
-        console.print(f"[yellow]Cleared old comments and analyses for '{topic_name}'. Keywords kept.[/yellow]")
-    elif topic and not args.refresh:
-        console.print(f"Topic [bold]{topic_name}[/bold] already exists with {_count_comments(conn, topic['id'])} comments.")
+    if result["status"] == "exists":
+        console.print(
+            f"Topic [bold]{args.topic}[/bold] already exists with {result['total_comments']} comments."
+        )
         console.print("Use --refresh to add more comments, or --reset-comments to clear and re-fetch.")
         return
 
-    # Generate keywords via Claude
-    if not topic:
-        console.print(f"[bold blue]Generating search keywords for:[/bold blue] {topic_name}")
-        keywords = analyzer.generate_keywords(topic_name)
-        console.print(f"[green]Keywords:[/green] {', '.join(keywords)}")
-        topic_id = db.create_topic(conn, topic_name, keywords)
-    else:
-        topic_id = topic["id"]
-        keywords = topic["keywords"].split(",")
-        console.print(f"[green]Using existing keywords:[/green] {', '.join(keywords)}")
+    if result["status"] == "reset":
+        console.print(f"[yellow]Cleared old comments and analyses for '{args.topic}'. Keywords kept.[/yellow]")
 
-    # Fetch comments
-    subreddits = args.subreddits.split(",") if args.subreddits else None
-    if args.public:
-        console.print("[bold blue]Fetching comments via public JSON API (no auth)...[/bold blue]")
-        comments = fetcher_public.search_comments(
-            keywords,
-            subreddits=subreddits,
-            limit_per_keyword=min(args.limit, 25),
-            time_filter=args.time,
-        )
-    else:
-        console.print("[bold blue]Fetching comments via PRAW (OAuth)...[/bold blue]")
-        reddit = fetcher.get_reddit()
-        comments = fetcher.search_comments(
-            reddit,
-            keywords,
-            subreddits=subreddits,
-            limit_per_keyword=args.limit,
-            time_filter=args.time,
-        )
-    console.print(f"[green]Found {len(comments)} relevant comments[/green]")
-
-    # Store
-    inserted = db.insert_comments(conn, topic_id, comments)
-    total = _count_comments(conn, topic_id)
-    console.print(f"[green]Inserted {inserted} new comments (total: {total})[/green]")
+    console.print(f"[green]Keywords:[/green] {', '.join(result['keywords'])}")
+    console.print(f"[green]Found {result['fetched']} relevant comments[/green]")
+    console.print(f"[green]Inserted {result['new_comments']} new comments (total: {result['total_comments']})[/green]")
 
 
 def cmd_analyze(args):
     """Run analysis on stored comments for a topic."""
-    conn = db.get_connection()
-    db.init_db(conn)
+    try:
+        if args.sentiment_only:
+            console.print(f"[bold blue]Running sentiment-only analysis (no Claude) for:[/bold blue] {args.topic}")
+        else:
+            console.print(f"[bold blue]Analyzing comments for:[/bold blue] {args.topic}")
 
-    topic = db.get_topic(conn, args.topic)
-    if not topic:
-        console.print(f"[red]Topic '{args.topic}' not found. Run 'search' first.[/red]")
+        result = core.analyze_topic(
+            topic=args.topic,
+            limit=args.limit,
+            sentiment_only=args.sentiment_only,
+            reset_analyses=args.reset_analyses,
+        )
+    except (core.TopicNotFoundError, core.NoCommentsError) as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
     if args.reset_analyses:
-        db.delete_analyses(conn, topic["id"])
         console.print(f"[yellow]Cleared old analyses for '{args.topic}'.[/yellow]")
 
-    comments = db.get_comments_for_topic(conn, topic["id"], limit=args.limit)
-    if not comments:
-        console.print("[red]No comments found for this topic.[/red]")
-        sys.exit(1)
-
-    if args.sentiment_only:
-        console.print(f"[bold blue]Running sentiment-only analysis (no Claude) for:[/bold blue] {args.topic}")
-    else:
-        console.print(f"[bold blue]Analyzing {len(comments)} comments for:[/bold blue] {args.topic}")
-
-    result = analyzer.run_full_analysis(args.topic, comments, skip_claude=args.sentiment_only)
-
-    # Save to DB
-    db.save_analysis(
-        conn,
-        topic["id"],
-        num_comments=len(comments),
-        sentiment_summary=json.dumps(result["sentiment"]),
-        themes=json.dumps(result["themes"]),
-        raw_result=json.dumps(result),
-    )
-
-    # Display results
     _display_results(args.topic, result)
 
     if args.output:
@@ -120,10 +76,7 @@ def cmd_analyze(args):
 
 def cmd_topics(args):
     """List all tracked topics."""
-    conn = db.get_connection()
-    db.init_db(conn)
-
-    topics = db.get_all_topics(conn)
+    topics = core.list_topics()
     if not topics:
         console.print("[yellow]No topics yet. Use 'search' to create one.[/yellow]")
         return
@@ -135,33 +88,50 @@ def cmd_topics(args):
     table.add_column("Created")
 
     for t in topics:
-        count = _count_comments(conn, t["id"])
-        table.add_row(t["name"], t["keywords"], str(count), t["created_at"][:10])
+        table.add_row(t["name"], t["keywords"], str(t["comment_count"]), t["created_at"][:10])
 
     console.print(table)
 
 
 def cmd_export(args):
     """Export the last saved analysis from DB to JSON — no API call."""
-    conn = db.get_connection()
-    db.init_db(conn)
-
-    topic = db.get_topic(conn, args.topic)
-    if not topic:
-        console.print(f"[red]Topic '{args.topic}' not found.[/red]")
+    try:
+        data = core.export_analysis(args.topic)
+    except (core.TopicNotFoundError, core.NoAnalysisError) as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    analysis = db.get_latest_analysis(conn, topic["id"])
-    if not analysis:
-        console.print(f"[red]No analysis found for '{args.topic}'. Run 'analyze' first.[/red]")
-        sys.exit(1)
-
-    result = json.loads(analysis["raw_result"])
     with open(args.output, "w") as f:
-        json.dump(result, f, indent=2)
+        json.dump(data["result"], f, indent=2)
 
-    console.print(f"[green]Exported analysis from {analysis['run_at'][:10]} to {args.output}[/green]")
-    _display_results(args.topic, result)
+    console.print(f"[green]Exported analysis from {data['run_at'][:10]} to {args.output}[/green]")
+    _display_results(args.topic, data["result"])
+
+
+def cmd_browse(args):
+    """Browse comments filtered by sentiment label."""
+    try:
+        data = core.browse_comments(
+            topic=args.topic,
+            sentiment=args.sentiment,
+            limit=args.limit,
+        )
+    except core.TopicNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    color = {"positive": "green", "negative": "red", "neutral": "yellow"}[data["sentiment"]]
+    console.print(
+        f"\n[bold]{data['sentiment'].upper()} comments for '{args.topic}'[/bold] ({data['total']} shown)\n"
+    )
+
+    for c in data["comments"]:
+        console.print(Panel(
+            c["body"],
+            title=f"[{color}]score:{c['score']}  vader:{c['compound']:+.2f}  r/{c['subreddit']}[/{color}]",
+            border_style=color,
+        ))
+        console.print()
 
 
 def _display_results(topic: str, result: dict):
@@ -177,7 +147,6 @@ def _display_results(topic: str, result: dict):
 
     themes = result["themes"]
 
-    # Themes table
     if "themes" in themes:
         table = Table(title="Top Themes")
         table.add_column("Theme", style="bold")
@@ -187,7 +156,6 @@ def _display_results(topic: str, result: dict):
             table.add_row(t["theme"], str(t.get("count", "?")), t.get("summary", ""))
         console.print(table)
 
-    # Emotions
     if "emotions" in themes:
         table = Table(title="Emotions")
         table.add_column("Emotion", style="bold")
@@ -196,7 +164,6 @@ def _display_results(topic: str, result: dict):
             table.add_row(e["emotion"], str(e.get("prevalence", "?")))
         console.print(table)
 
-    # Opinions
     if "opinions" in themes:
         table = Table(title="Key Opinions")
         table.add_column("Stance", style="bold")
@@ -206,7 +173,6 @@ def _display_results(topic: str, result: dict):
             table.add_row(o["stance"], o.get("strength", "?"), str(o.get("prevalence", "?")))
         console.print(table)
 
-    # Controversy
     if "controversy_level" in themes:
         level = themes["controversy_level"]
         if isinstance(level, dict):
@@ -215,62 +181,11 @@ def _display_results(topic: str, result: dict):
             text = str(level)
         console.print(Panel(text, title="Controversy Level"))
 
-    # Key insights
     if "key_insights" in themes:
         console.print(Panel(
             "\n".join(f"• {i}" for i in themes["key_insights"]),
             title="Key Insights",
         ))
-
-
-def cmd_browse(args):
-    """Browse comments filtered by sentiment label."""
-    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-    vader = SentimentIntensityAnalyzer()
-
-    conn = db.get_connection()
-    db.init_db(conn)
-
-    topic = db.get_topic(conn, args.topic)
-    if not topic:
-        console.print(f"[red]Topic '{args.topic}' not found.[/red]")
-        sys.exit(1)
-
-    comments = db.get_comments_for_topic(conn, topic["id"], limit=2000)
-
-    # Filter by sentiment
-    def label(score):
-        if score >= 0.05:
-            return "positive"
-        elif score <= -0.05:
-            return "negative"
-        return "neutral"
-
-    filtered = []
-    for c in comments:
-        compound = vader.polarity_scores(c["body"])["compound"]
-        if label(compound) == args.sentiment:
-            filtered.append((compound, c))
-
-    # Sort strongest sentiment first
-    filtered.sort(key=lambda x: abs(x[0]), reverse=True)
-    filtered = filtered[:args.limit]
-
-    color = {"positive": "green", "negative": "red", "neutral": "yellow"}[args.sentiment]
-    console.print(f"\n[bold]{args.sentiment.upper()} comments for '{args.topic}'[/bold] ({len(filtered)} shown)\n")
-
-    for compound, c in filtered:
-        console.print(Panel(
-            c["body"],
-            title=f"[{color}]score:{c['score']}  vader:{compound:+.2f}  r/{c['subreddit']}[/{color}]",
-            border_style=color,
-        ))
-        console.print()
-
-
-def _count_comments(conn, topic_id: int) -> int:
-    row = conn.execute("SELECT COUNT(*) as cnt FROM comments WHERE topic_id = ?", (topic_id,)).fetchone()
-    return row["cnt"]
 
 
 def main():
