@@ -190,6 +190,100 @@ def browse_comments(
     return {"sentiment": sentiment, "comments": filtered, "total": len(filtered)}
 
 
+def label_comment(topic: str, comment_id: int, label: str | None) -> None:
+    """Set or clear the manual label for a comment. label must be positive/negative/neutral or None."""
+    if label is not None and label not in ("positive", "negative", "neutral"):
+        raise ValueError(f"Invalid label '{label}'. Must be positive, negative, neutral, or None.")
+    conn = db.get_connection()
+    db.init_db(conn)
+    db.set_comment_label(conn, comment_id, label)
+
+
+def get_comments_for_labeling(
+    topic: str,
+    unlabeled_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    conn = db.get_connection()
+    db.init_db(conn)
+    topic_row = db.get_topic(conn, topic)
+    if not topic_row:
+        raise TopicNotFoundError(f"Topic '{topic}' not found.")
+    comments = db.get_comments_for_labeling(
+        conn, topic_row["id"], unlabeled_only=unlabeled_only, limit=limit, offset=offset
+    )
+    counts = db.count_comments_by_label(conn, topic_row["id"])
+    return {"comments": comments, "counts": counts}
+
+
+def evaluate_sentiment(topic: str, model: str = "vader") -> dict:
+    """Compare model sentiment predictions against manual GT labels.
+
+    Returns accuracy, per-class precision/recall/F1, and a confusion matrix.
+    """
+    conn = db.get_connection()
+    db.init_db(conn)
+    topic_row = db.get_topic(conn, topic)
+    if not topic_row:
+        raise TopicNotFoundError(f"Topic '{topic}' not found.")
+
+    labeled = db.get_labeled_comments(conn, topic_row["id"])
+    if not labeled:
+        raise NoCommentsError("No manually labeled comments found. Label some comments first.")
+
+    gt = [c["manual_label"] for c in labeled]
+    texts = [c["body"] for c in labeled]
+
+    if model == "vader":
+        preds = [_sentiment_label(vader.polarity_scores(t)["compound"]) for t in texts]
+    elif model == "textblob":
+        try:
+            from textblob import TextBlob
+        except ImportError:
+            raise ImportError("textblob is not installed. Run: pip install textblob")
+        preds = []
+        for t in texts:
+            pol = TextBlob(t).sentiment.polarity
+            if pol >= 0.05:
+                preds.append("positive")
+            elif pol <= -0.05:
+                preds.append("negative")
+            else:
+                preds.append("neutral")
+    else:
+        raise ValueError(f"Unknown model '{model}'. Supported: vader, textblob")
+
+    labels_order = ["positive", "neutral", "negative"]
+    correct = sum(g == p for g, p in zip(gt, preds))
+    accuracy = correct / len(gt)
+
+    # Per-class metrics
+    per_class = {}
+    for lbl in labels_order:
+        tp = sum(g == lbl and p == lbl for g, p in zip(gt, preds))
+        fp = sum(g != lbl and p == lbl for g, p in zip(gt, preds))
+        fn = sum(g == lbl and p != lbl for g, p in zip(gt, preds))
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        per_class[lbl] = {"precision": round(precision, 3), "recall": round(recall, 3), "f1": round(f1, 3), "support": gt.count(lbl)}
+
+    # Confusion matrix: rows = GT, cols = predicted
+    matrix = {g: {p: 0 for p in labels_order} for g in labels_order}
+    for g, p in zip(gt, preds):
+        matrix[g][p] += 1
+
+    return {
+        "model": model,
+        "total_labeled": len(gt),
+        "accuracy": round(accuracy, 4),
+        "per_class": per_class,
+        "confusion_matrix": matrix,
+        "labels_order": labels_order,
+    }
+
+
 def export_analysis(topic: str) -> dict:
     """Return the latest saved analysis for a topic."""
     conn = db.get_connection()

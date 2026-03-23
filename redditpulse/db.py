@@ -49,6 +49,12 @@ def init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_comments_topic ON comments(topic_id);
         CREATE INDEX IF NOT EXISTS idx_analyses_topic ON analyses(topic_id);
     """)
+    # Migrate: add manual_label column if it doesn't exist yet
+    try:
+        conn.execute("ALTER TABLE comments ADD COLUMN manual_label TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
 
 def create_topic(conn: sqlite3.Connection, name: str, keywords: list[str]) -> int:
@@ -130,3 +136,59 @@ def get_latest_analysis(conn: sqlite3.Connection, topic_id: int) -> dict | None:
         (topic_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def set_comment_label(conn: sqlite3.Connection, comment_id: int, label: str | None) -> None:
+    """Set or clear the manual label for a comment."""
+    conn.execute("UPDATE comments SET manual_label = ? WHERE id = ?", (label, comment_id))
+    conn.commit()
+
+
+def get_comments_for_labeling(
+    conn: sqlite3.Connection,
+    topic_id: int,
+    unlabeled_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """Return comments for labeling, optionally filtered to unlabeled ones."""
+    if unlabeled_only:
+        rows = conn.execute(
+            """SELECT id, reddit_id, subreddit, author, body, score, permalink, manual_label
+               FROM comments WHERE topic_id = ? AND manual_label IS NULL
+               ORDER BY score DESC LIMIT ? OFFSET ?""",
+            (topic_id, limit, offset),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT id, reddit_id, subreddit, author, body, score, permalink, manual_label
+               FROM comments WHERE topic_id = ?
+               ORDER BY score DESC LIMIT ? OFFSET ?""",
+            (topic_id, limit, offset),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_labeled_comments(conn: sqlite3.Connection, topic_id: int) -> list[dict]:
+    """Return only comments that have a manual label."""
+    rows = conn.execute(
+        """SELECT id, body, score, manual_label
+           FROM comments WHERE topic_id = ? AND manual_label IS NOT NULL""",
+        (topic_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_comments_by_label(conn: sqlite3.Connection, topic_id: int) -> dict:
+    """Return counts: total, labeled, and per-label breakdown."""
+    total = conn.execute(
+        "SELECT COUNT(*) FROM comments WHERE topic_id = ?", (topic_id,)
+    ).fetchone()[0]
+    rows = conn.execute(
+        """SELECT manual_label, COUNT(*) as cnt FROM comments
+           WHERE topic_id = ? GROUP BY manual_label""",
+        (topic_id,),
+    ).fetchall()
+    breakdown = {r["manual_label"] or "unlabeled": r["cnt"] for r in rows}
+    labeled = total - breakdown.get("unlabeled", breakdown.get(None, 0))
+    return {"total": total, "labeled": labeled, "breakdown": breakdown}

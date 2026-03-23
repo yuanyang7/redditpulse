@@ -12,6 +12,7 @@ dependencies = [
     "streamlit>=1.30",
     "pandas>=2.0",
     "sentence-transformers>=2.2",
+    "textblob>=0.17",
 ]
 
 [project.scripts]

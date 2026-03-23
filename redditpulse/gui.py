@@ -143,8 +143,8 @@ if not selected:
     st.markdown("Create a topic in the sidebar to get started.")
     st.stop()
 
-tab_dash, tab_analyze, tab_browse, tab_export = st.tabs(
-    ["📈 Dashboard", "🔬 Analyze", "💬 Browse", "📁 Export"]
+tab_dash, tab_analyze, tab_browse, tab_label, tab_evaluate, tab_export = st.tabs(
+    ["📈 Dashboard", "🔬 Analyze", "💬 Browse", "🏷 Label", "📊 Evaluate", "📁 Export"]
 )
 
 # ========================== DASHBOARD TAB ==========================
@@ -333,6 +333,124 @@ with tab_browse:
                     f"vader: {c['compound']:+.2f}"
                 )
                 st.markdown(c["body"])
+
+
+# ========================== LABEL TAB ==========================
+with tab_label:
+    st.subheader(f"Label Comments: {selected}")
+    st.caption("Assign ground-truth sentiment labels. These are used in the Evaluate tab to benchmark models.")
+
+    lc1, lc2, lc3 = st.columns(3)
+    with lc1:
+        unlabeled_only = st.checkbox("Show unlabeled only", value=True, key="lbl_unlabeled")
+    with lc2:
+        label_page_size = st.number_input("Per page", min_value=5, max_value=50, value=10, key="lbl_page_size")
+    with lc3:
+        label_page = st.number_input("Page", min_value=1, value=1, key="lbl_page")
+
+    try:
+        data = core.get_comments_for_labeling(
+            selected,
+            unlabeled_only=unlabeled_only,
+            limit=label_page_size,
+            offset=(label_page - 1) * label_page_size,
+        )
+    except core.TopicNotFoundError as e:
+        st.error(str(e))
+        st.stop()
+
+    counts = data["counts"]
+    cc1, cc2, cc3, cc4, cc5 = st.columns(5)
+    cc1.metric("Total", counts["total"])
+    cc2.metric("Labeled", counts["labeled"])
+    cc3.metric("Positive", counts["breakdown"].get("positive", 0))
+    cc4.metric("Neutral", counts["breakdown"].get("neutral", 0))
+    cc5.metric("Negative", counts["breakdown"].get("negative", 0))
+
+    st.markdown("---")
+
+    if not data["comments"]:
+        st.info("No comments to show. Try unchecking 'Show unlabeled only' or fetch more comments.")
+    else:
+        LABEL_COLORS = {"positive": "🟢", "negative": "🔴", "neutral": "🟡"}
+        for c in data["comments"]:
+            current = c["manual_label"]
+            icon = LABEL_COLORS.get(current, "⬜")
+            with st.container(border=True):
+                st.markdown(
+                    f"{icon} **r/{c['subreddit']}** · score: {c['score']} "
+                    + (f"· **{current.upper()}**" if current else "· *unlabeled*")
+                )
+                st.markdown(c["body"])
+                b1, b2, b3, b4 = st.columns(4)
+                with b1:
+                    if st.button("🟢 Positive", key=f"pos_{c['id']}"):
+                        core.label_comment(selected, c["id"], "positive")
+                        st.rerun()
+                with b2:
+                    if st.button("🟡 Neutral", key=f"neu_{c['id']}"):
+                        core.label_comment(selected, c["id"], "neutral")
+                        st.rerun()
+                with b3:
+                    if st.button("🔴 Negative", key=f"neg_{c['id']}"):
+                        core.label_comment(selected, c["id"], "negative")
+                        st.rerun()
+                with b4:
+                    if current and st.button("✖ Clear", key=f"clr_{c['id']}"):
+                        core.label_comment(selected, c["id"], None)
+                        st.rerun()
+
+
+# ========================== EVALUATE TAB ==========================
+with tab_evaluate:
+    st.subheader(f"Model Evaluation: {selected}")
+    st.caption("Compare sentiment model predictions against your manual ground-truth labels.")
+
+    ev1, ev2 = st.columns([2, 1])
+    with ev1:
+        model_choice = st.selectbox("Model to evaluate", ["vader", "textblob"], key="eval_model")
+    with ev2:
+        run_eval = st.button("▶ Run Evaluation", use_container_width=True, type="primary")
+
+    if run_eval:
+        try:
+            result = core.evaluate_sentiment(selected, model=model_choice)
+            st.session_state["eval_result"] = result
+        except core.TopicNotFoundError as e:
+            st.error(str(e))
+        except core.NoCommentsError as e:
+            st.warning(str(e))
+        except ImportError as e:
+            st.error(str(e))
+
+    eval_result = st.session_state.get("eval_result")
+    if eval_result:
+        st.markdown("---")
+        st.markdown(f"**Model:** `{eval_result['model']}` · **Labeled comments:** {eval_result['total_labeled']}")
+
+        acc_col, _ = st.columns([1, 3])
+        acc_col.metric("Accuracy", f"{eval_result['accuracy']:.1%}")
+
+        # Per-class table
+        st.subheader("Per-class Metrics")
+        pc = eval_result["per_class"]
+        pc_df = pd.DataFrame([
+            {"Class": lbl, "Precision": v["precision"], "Recall": v["recall"],
+             "F1": v["f1"], "Support": v["support"]}
+            for lbl, v in pc.items()
+        ])
+        st.dataframe(pc_df, use_container_width=True, hide_index=True)
+
+        # Confusion matrix
+        st.subheader("Confusion Matrix (rows = Ground Truth, cols = Predicted)")
+        order = eval_result["labels_order"]
+        cm = eval_result["confusion_matrix"]
+        cm_df = pd.DataFrame(
+            [[cm[g][p] for p in order] for g in order],
+            index=[f"GT: {g}" for g in order],
+            columns=[f"Pred: {p}" for p in order],
+        )
+        st.dataframe(cm_df, use_container_width=True)
 
 
 # ========================== EXPORT TAB ==========================
