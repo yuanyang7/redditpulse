@@ -60,6 +60,8 @@ with st.sidebar:
 
     subreddits = st.text_input("Subreddits", placeholder="all (comma-separated)")
     use_public = st.checkbox("Use public API (no credentials)", value=False)
+    min_relevance = st.slider("Min relevance (0 = off)", 0.0, 1.0, 0.0, 0.05,
+                              help="Semantic similarity threshold. Try 0.3 to filter off-topic comments.")
 
     if st.button("🔍 Search", use_container_width=True, type="primary"):
         if not new_topic.strip():
@@ -74,14 +76,18 @@ with st.sidebar:
                         time_filter=time_filter,
                         public=use_public,
                         refresh=True,
+                        min_relevance=min_relevance if min_relevance > 0 else None,
                     )
                     _refresh_topics()
                     st.session_state["topic_select"] = new_topic.strip()
-                    st.success(
+                    msg = (
                         f"Found {result['fetched']} comments, "
                         f"inserted {result['new_comments']} new "
                         f"(total: {result['total_comments']})"
                     )
+                    if "filtered_out" in result:
+                        msg += f" — filtered out {result['filtered_out']} irrelevant"
+                    st.success(msg)
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
@@ -90,24 +96,40 @@ with st.sidebar:
     if selected:
         st.markdown("---")
         st.markdown(f"**Active:** {selected}")
-        rc1, rc2 = st.columns(2)
+        rc1, rc2, rc3 = st.columns(3)
         with rc1:
             if st.button("🔄 Refresh", use_container_width=True):
                 with st.spinner("Fetching more comments..."):
                     try:
-                        result = core.search_topic(selected, refresh=True, public=use_public)
+                        result = core.search_topic(selected, refresh=True, public=use_public,
+                                                   min_relevance=min_relevance if min_relevance > 0 else None)
                         _refresh_topics()
                         st.success(f"+{result['new_comments']} new comments")
                         st.rerun()
                     except Exception as e:
                         st.error(str(e))
         with rc2:
-            if st.button("🗑 Reset", use_container_width=True):
+            if st.button("🔁 Re-fetch", use_container_width=True,
+                         help="Clear comments and re-fetch, keeping keywords and past analyses"):
+                with st.spinner("Re-fetching comments..."):
+                    try:
+                        result = core.search_topic(selected, reset_comments=True, keep_analyses=True,
+                                                   public=use_public,
+                                                   min_relevance=min_relevance if min_relevance > 0 else None)
+                        _refresh_topics()
+                        st.success(f"Re-fetched: {result['new_comments']} comments (analyses kept)")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+        with rc3:
+            if st.button("🗑 Reset All", use_container_width=True,
+                         help="Clear comments AND analyses, then re-fetch"):
                 with st.spinner("Resetting..."):
                     try:
-                        core.search_topic(selected, reset_comments=True, public=use_public)
+                        core.search_topic(selected, reset_comments=True, public=use_public,
+                                          min_relevance=min_relevance if min_relevance > 0 else None)
                         _refresh_topics()
-                        st.success("Comments cleared & re-fetched")
+                        st.success("Comments & analyses cleared, re-fetched")
                         st.rerun()
                     except Exception as e:
                         st.error(str(e))

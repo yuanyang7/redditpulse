@@ -4,7 +4,7 @@ import json
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from . import db, fetcher, fetcher_public, analyzer
+from . import db, fetcher, fetcher_public, analyzer, relevance
 
 vader = SentimentIntensityAnalyzer()
 
@@ -29,6 +29,8 @@ def search_topic(
     public: bool = False,
     refresh: bool = False,
     reset_comments: bool = False,
+    keep_analyses: bool = False,
+    min_relevance: float | None = None,
 ) -> dict:
     """Fetch Reddit comments for a topic. Returns status info dict."""
     conn = db.get_connection()
@@ -39,7 +41,8 @@ def search_topic(
     if topic_row and reset_comments:
         conn.execute("DELETE FROM comments WHERE topic_id = ?", (topic_row["id"],))
         conn.commit()
-        db.delete_analyses(conn, topic_row["id"])
+        if not keep_analyses:
+            db.delete_analyses(conn, topic_row["id"])
         status = "reset"
     elif topic_row and not refresh:
         count = _count_comments(conn, topic_row["id"])
@@ -78,16 +81,24 @@ def search_topic(
             time_filter=time_filter,
         )
 
+    # Optional semantic relevance filtering
+    pre_filter_count = len(comments)
+    if min_relevance is not None and comments:
+        comments = relevance.filter_by_relevance(topic, comments, threshold=min_relevance)
+
     inserted = db.insert_comments(conn, topic_id, comments)
     total = _count_comments(conn, topic_id)
 
-    return {
+    result = {
         "status": status,
         "keywords": keywords,
-        "fetched": len(comments),
+        "fetched": pre_filter_count,
         "new_comments": inserted,
         "total_comments": total,
     }
+    if min_relevance is not None:
+        result["filtered_out"] = pre_filter_count - len(comments)
+    return result
 
 
 def analyze_topic(

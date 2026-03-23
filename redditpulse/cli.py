@@ -25,6 +25,7 @@ def cmd_search(args):
             public=args.public,
             refresh=args.refresh,
             reset_comments=args.reset_comments,
+            min_relevance=args.min_relevance,
         )
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -41,7 +42,9 @@ def cmd_search(args):
         console.print(f"[yellow]Cleared old comments and analyses for '{args.topic}'. Keywords kept.[/yellow]")
 
     console.print(f"[green]Keywords:[/green] {', '.join(result['keywords'])}")
-    console.print(f"[green]Found {result['fetched']} relevant comments[/green]")
+    console.print(f"[green]Found {result['fetched']} comments[/green]")
+    if "filtered_out" in result:
+        console.print(f"[yellow]Filtered out {result['filtered_out']} irrelevant comments (threshold: {args.min_relevance})[/yellow]")
     console.print(f"[green]Inserted {result['new_comments']} new comments (total: {result['total_comments']})[/green]")
 
 
@@ -201,6 +204,8 @@ def main():
     p_search.add_argument("--refresh", action="store_true", help="Fetch more comments for existing topic")
     p_search.add_argument("--reset-comments", action="store_true", help="Delete old comments and re-fetch (keeps keywords)")
     p_search.add_argument("--public", action="store_true", help="Use public JSON API (no Reddit credentials needed)")
+    p_search.add_argument("--min-relevance", type=float, default=None,
+                          help="Filter comments by semantic relevance (0.0-1.0, e.g. 0.3). Uses sentence-transformers.")
     p_search.set_defaults(func=cmd_search)
 
     # analyze
