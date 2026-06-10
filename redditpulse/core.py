@@ -248,6 +248,114 @@ def browse_comments(
     return {"sentiment": sentiment, "comments": filtered, "total": len(filtered)}
 
 
+def get_sentiment_trends(topic: str, min_comments: int = 3,
+                         bucket: str = "auto") -> dict:
+    """Bucket a topic's comments over time and summarize sentiment per bucket.
+
+    Sentiment per comment reuses the latest analysis's stored per-comment labels
+    (so it matches the Analyze/Browse tabs), falling back to VADER computed on
+    the fly when no analysis exists. Bucket size adapts to the data's date span
+    unless one is forced ("day"|"week"|"month").
+
+    Returns a dict with the chosen bucket, ordered points (each with counts,
+    sentiment percentages and a `sparse` flag for thin buckets), the total
+    comment count, and the [oldest, newest] date range.
+    """
+    from datetime import datetime, timezone
+
+    conn = db.get_connection()
+    db.init_db(conn)
+
+    topic_row = db.get_topic(conn, topic)
+    if not topic_row:
+        raise TopicNotFoundError(f"Topic '{topic}' not found.")
+
+    comments = db.get_comments_for_topic(conn, topic_row["id"], limit=5000)
+    comments = [c for c in comments if c.get("created_utc")]
+    if not comments:
+        raise NoCommentsError(f"No timestamped comments found for '{topic}'.")
+
+    # Reuse stored per-comment sentiment (whichever model the latest analysis
+    # used); fall back to VADER when there's no analysis yet.
+    stored = {}
+    source = "vader"
+    latest = db.get_latest_analysis(conn, topic_row["id"])
+    if latest and latest.get("raw_result"):
+        try:
+            raw = json.loads(latest["raw_result"])
+            stored = {s["reddit_id"]: s for s in raw.get("per_comment_sentiment", [])}
+            if stored:
+                source = "analysis"
+        except (ValueError, KeyError):
+            stored = {}
+
+    # Choose bucket size from the data span unless forced.
+    times = [c["created_utc"] for c in comments]
+    span_days = (max(times) - min(times)) / 86400
+    if bucket == "auto":
+        bucket = "day" if span_days <= 45 else "week" if span_days <= 400 else "month"
+
+    def _key(ts: float) -> str:
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        if bucket == "day":
+            return dt.strftime("%Y-%m-%d")
+        if bucket == "week":
+            iso = dt.isocalendar()
+            return f"{iso.year}-W{iso.week:02d}"
+        return dt.strftime("%Y-%m")
+
+    # Also keep a sortable/representative date per bucket for the x-axis.
+    buckets: dict[str, dict] = {}
+    for c in comments:
+        s = stored.get(c["reddit_id"])
+        if s is not None:
+            lbl = s.get("label") or _sentiment_label(s.get("compound", 0.0))
+            compound = s.get("compound", 0.0)
+        else:
+            compound = vader.polarity_scores(c["body"])["compound"]
+            lbl = _sentiment_label(compound)
+
+        key = _key(c["created_utc"])
+        b = buckets.setdefault(key, {
+            "period": key, "first_ts": c["created_utc"],
+            "positive": 0, "neutral": 0, "negative": 0,
+            "count": 0, "compound_sum": 0.0,
+        })
+        b[lbl] = b.get(lbl, 0) + 1
+        b["count"] += 1
+        b["compound_sum"] += compound
+        b["first_ts"] = min(b["first_ts"], c["created_utc"])
+
+    points = []
+    for b in sorted(buckets.values(), key=lambda x: x["first_ts"]):
+        n = b["count"]
+        points.append({
+            "period": b["period"],
+            "date": datetime.fromtimestamp(b["first_ts"], tz=timezone.utc).strftime("%Y-%m-%d"),
+            "count": n,
+            "positive": b["positive"],
+            "neutral": b["neutral"],
+            "negative": b["negative"],
+            "pct_positive": round(100 * b["positive"] / n, 1),
+            "pct_negative": round(100 * b["negative"] / n, 1),
+            "pct_neutral": round(100 * b["neutral"] / n, 1),
+            "avg_compound": round(b["compound_sum"] / n, 3),
+            "sparse": n < min_comments,
+        })
+
+    return {
+        "bucket": bucket,
+        "source": source,
+        "points": points,
+        "total": len(comments),
+        "min_comments": min_comments,
+        "date_range": [
+            datetime.fromtimestamp(min(times), tz=timezone.utc).strftime("%Y-%m-%d"),
+            datetime.fromtimestamp(max(times), tz=timezone.utc).strftime("%Y-%m-%d"),
+        ],
+    }
+
+
 def label_comment(topic: str, comment_id: int, label: str | None) -> None:
     """Set or clear the manual label for a comment. label must be positive/negative/neutral or None."""
     if label is not None and label not in ("positive", "negative", "neutral"):
