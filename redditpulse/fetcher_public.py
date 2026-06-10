@@ -25,6 +25,38 @@ BASE = "https://www.reddit.com"
 ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
 
 
+def _get(url: str, params: dict, max_retries: int = 4) -> requests.Response:
+    """GET a Reddit RSS URL, retrying 429s with exponential backoff.
+
+    429 (Too Many Requests) is transient, so we back off and retry. 401/403
+    are hard blocks and raise immediately.
+    """
+    delay = 3.0
+    for attempt in range(max_retries):
+        resp = requests.get(url, headers=HEADERS, params=params, timeout=10)
+        if resp.status_code == 429:
+            if attempt < max_retries - 1:
+                retry_after = resp.headers.get("Retry-After")
+                wait = float(retry_after) if retry_after and retry_after.isdigit() else delay
+                time.sleep(wait)
+                delay *= 2  # exponential backoff
+                continue
+            raise RuntimeError(
+                "Reddit is rate-limiting public RSS requests (HTTP 429) even after "
+                "retries. Wait a few minutes and try again, reduce the Limit, or "
+                "provide Reddit credentials in .env and uncheck 'Use public API'."
+            )
+        if resp.status_code in (401, 403):
+            raise RuntimeError(
+                f"Reddit blocked the public RSS request (HTTP {resp.status_code}). "
+                "Anonymous access is blocked — uncheck 'Use public API' and provide "
+                "Reddit credentials in .env instead."
+            )
+        resp.raise_for_status()
+        return resp
+    raise RuntimeError("Reddit RSS request failed after retries.")
+
+
 def search_comments(
     keywords: list[str],
     subreddits: list[str] | None = None,
@@ -78,14 +110,7 @@ def _search_submissions(keyword: str, subreddit: str | None, limit: int, time_fi
         params = {"q": keyword, "sort": "relevance", "t": time_filter, "limit": min(limit, 25)}
 
     try:
-        resp = requests.get(url, headers=HEADERS, params=params, timeout=10)
-        if resp.status_code in (401, 403, 429):
-            raise RuntimeError(
-                f"Reddit blocked the public RSS request (HTTP {resp.status_code}). "
-                "Anonymous access is rate-limited/blocked — uncheck 'Use public API' "
-                "and provide Reddit credentials in .env instead."
-            )
-        resp.raise_for_status()
+        resp = _get(url, params)
         root = ET.fromstring(resp.content)
         permalinks = []
         for entry in root.findall("a:entry", ATOM_NS):
@@ -101,14 +126,7 @@ def _fetch_comments(permalink: str) -> list[dict]:
     """Fetch comments for a submission via its .rss feed."""
     rss_url = permalink.split("?")[0].rstrip("/") + ".rss"
     try:
-        resp = requests.get(rss_url, headers=HEADERS, params={"limit": 100}, timeout=10)
-        if resp.status_code in (401, 403, 429):
-            raise RuntimeError(
-                f"Reddit blocked the public RSS request (HTTP {resp.status_code}). "
-                "Anonymous access is rate-limited/blocked — uncheck 'Use public API' "
-                "and provide Reddit credentials in .env instead."
-            )
-        resp.raise_for_status()
+        resp = _get(rss_url, {"limit": 100})
         root = ET.fromstring(resp.content)
 
         sr_match = re.search(r"/r/([^/]+)/", permalink)
