@@ -72,13 +72,14 @@ def search_comments(
                 if raw.get("author") == "AutoModerator":
                     continue
                 seen_ids.add(cid)
+                sr = raw.get("subreddit", subreddit)
                 comments.append({
                     "reddit_id": cid,
-                    "subreddit": raw.get("subreddit", subreddit),
+                    "subreddit": sr,
                     "author": raw.get("author") or "[deleted]",
                     "body": body,
                     "score": raw.get("score", 0) or 0,
-                    "permalink": "https://reddit.com" + raw.get("permalink", ""),
+                    "permalink": _permalink(sr, raw.get("link_id"), cid),
                     "created_utc": raw.get("created_utc", 0) or 0,
                 })
 
@@ -109,6 +110,10 @@ def _search(subreddit: str, keyword: str, limit: int, after: str | None,
         "body": keyword,
         "limit": max(1, min(limit, 100)),
         "sort": "desc",
+        # Request only the fields we use — Arctic Shift's docs note this can cut
+        # response time/size, which helps avoid timeouts on slow comment search.
+        # (permalink isn't a selectable field, so we rebuild it from link_id.)
+        "fields": "id,author,body,score,subreddit,created_utc,link_id",
     }
     if after:
         params["after"] = after
@@ -151,6 +156,14 @@ def _search(subreddit: str, keyword: str, limit: int, after: str | None,
         resp.raise_for_status()
         return resp.json().get("data", [])
     return []
+
+
+def _permalink(subreddit: str, link_id: str | None, comment_id: str) -> str:
+    """Reconstruct a comment permalink from its subreddit, post id and own id."""
+    post_id = (link_id or "").removeprefix("t3_")
+    if subreddit and post_id:
+        return f"https://reddit.com/r/{subreddit}/comments/{post_id}/_/{comment_id}/"
+    return f"https://reddit.com/comments/{comment_id}"
 
 
 def _after_param(time_filter: str) -> str | None:
