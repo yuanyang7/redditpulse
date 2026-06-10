@@ -4,7 +4,7 @@ import json
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-from . import db, fetcher, fetcher_public, analyzer, relevance
+from . import db, fetcher, fetcher_public, fetcher_arctic, analyzer, relevance
 
 vader = SentimentIntensityAnalyzer()
 
@@ -69,10 +69,10 @@ def search_topic(
 
     # Fetch comments
     if public:
-        comments = fetcher_public.search_comments(
+        comments = fetcher_arctic.search_comments(
             keywords,
             subreddits=subreddits,
-            limit_per_keyword=min(limit, 25),
+            limit_per_keyword=min(limit, 100),
             time_filter=time_filter,
         )
     else:

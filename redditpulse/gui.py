@@ -67,8 +67,9 @@ with st.sidebar:
     subreddits = st.text_input("Subreddits", placeholder="all (comma-separated)")
     use_public = st.checkbox(
         "Use public API (no credentials)", value=True,
-        help="Fetches via Reddit's public RSS feeds — no credentials needed, but "
-             "comment scores are unavailable (shown as 0).",
+        help="Fetches via the Arctic Shift archive — no credentials needed and "
+             "no Reddit rate limits. Keyword search is scoped to subreddits, so "
+             "set the Subreddits field for best results (defaults to a broad list).",
     )
     min_relevance = st.slider("Min relevance (0 = off)", 0.0, 1.0, 0.3, 0.05,
                               help="Semantic similarity threshold. Try 0.3 to filter off-topic comments.")

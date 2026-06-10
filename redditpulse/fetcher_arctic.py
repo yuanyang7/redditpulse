@@ -1,0 +1,113 @@
+"""Fetch Reddit comments via the Arctic Shift archive — no credentials required.
+
+Arctic Shift (https://arctic-shift.photon-reddit.com) is a free, actively
+maintained Pushshift successor that archives Reddit posts/comments and exposes
+a search API. Unlike Reddit's anonymous endpoints it isn't aggressively rate
+limited, and unlike PullPush its data stays current (within ~hours).
+
+Limitation: comment keyword (`body`) search must be scoped to a subreddit, so
+this fetcher searches a list of subreddits rather than all of Reddit. When the
+caller passes no subreddits, DEFAULT_SUBREDDITS is used.
+"""
+
+import time
+from datetime import datetime, timezone, timedelta
+
+import requests
+
+BASE = "https://arctic-shift.photon-reddit.com"
+HEADERS = {"User-Agent": "redditpulse/0.1 (personal research tool)"}
+
+# Used when the caller doesn't specify subreddits — broad, discussion-heavy
+# subreddits where most topics get talked about.
+DEFAULT_SUBREDDITS = [
+    "technology", "privacy", "artificial", "MachineLearning", "Futurology",
+    "technews", "science", "news", "worldnews", "AskReddit",
+]
+
+# Map the GUI's time_filter values to a lookback window for the `after` param.
+_WINDOWS = {
+    "hour": timedelta(hours=1),
+    "day": timedelta(days=1),
+    "week": timedelta(weeks=1),
+    "month": timedelta(days=30),
+    "year": timedelta(days=365),
+    "all": None,
+}
+
+
+def search_comments(
+    keywords: list[str],
+    subreddits: list[str] | None = None,
+    limit_per_keyword: int = 25,
+    time_filter: str = "month",
+) -> list[dict]:
+    """Search Arctic Shift for comments matching keywords across subreddits.
+
+    For each subreddit x keyword pair, runs a body keyword search. Results are
+    deduplicated by comment id.
+    """
+    targets = [s.strip() for s in (subreddits or DEFAULT_SUBREDDITS) if s.strip()]
+    after = _after_param(time_filter)
+
+    seen_ids: set[str] = set()
+    comments: list[dict] = []
+
+    for keyword in keywords:
+        for subreddit in targets:
+            for raw in _search(subreddit, keyword, limit_per_keyword, after):
+                cid = raw.get("id")
+                body = (raw.get("body") or "").strip()
+                if not cid or cid in seen_ids:
+                    continue
+                if not body or body in ("[deleted]", "[removed]"):
+                    continue
+                if raw.get("author") == "AutoModerator":
+                    continue
+                seen_ids.add(cid)
+                comments.append({
+                    "reddit_id": cid,
+                    "subreddit": raw.get("subreddit", subreddit),
+                    "author": raw.get("author") or "[deleted]",
+                    "body": body,
+                    "score": raw.get("score", 0) or 0,
+                    "permalink": "https://reddit.com" + raw.get("permalink", ""),
+                    "created_utc": raw.get("created_utc", 0) or 0,
+                })
+
+    return comments
+
+
+def _search(subreddit: str, keyword: str, limit: int, after: str | None) -> list[dict]:
+    """Run one comment body search; returns raw Arctic Shift comment dicts."""
+    params = {
+        "subreddit": subreddit,
+        "body": keyword,
+        "limit": max(1, min(limit, 100)),
+        "sort": "desc",
+    }
+    if after:
+        params["after"] = after
+
+    try:
+        resp = requests.get(f"{BASE}/api/comments/search", headers=HEADERS,
+                            params=params, timeout=20)
+        if resp.status_code == 429:
+            raise RuntimeError(
+                "Arctic Shift is rate-limiting requests (HTTP 429). "
+                "Wait a moment and try again, or reduce the number of subreddits."
+            )
+        resp.raise_for_status()
+        return resp.json().get("data", [])
+    except requests.RequestException as e:
+        raise RuntimeError(f"Arctic Shift request failed: {e}") from e
+    finally:
+        time.sleep(0.3)  # be polite
+
+
+def _after_param(time_filter: str) -> str | None:
+    """Convert a GUI time_filter into an ISO date for the `after` query param."""
+    window = _WINDOWS.get(time_filter, _WINDOWS["month"])
+    if window is None:  # "all"
+        return None
+    return (datetime.now(timezone.utc) - window).strftime("%Y-%m-%d")
