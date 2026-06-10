@@ -60,7 +60,7 @@ with st.sidebar:
 
     col1, col2 = st.columns(2)
     with col1:
-        limit = st.number_input("Limit", min_value=1, max_value=100, value=10)
+        limit = st.number_input("Limit", min_value=1, max_value=100, value=30)
     with col2:
         time_filter = st.selectbox("Time", ["month", "week", "day", "hour", "year", "all"])
 
