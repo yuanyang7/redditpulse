@@ -52,10 +52,17 @@ def search_comments(
 
     seen_ids: set[str] = set()
     comments: list[dict] = []
+    queries = 0
+    timed_out = 0
 
     for keyword in keywords:
         for subreddit in targets:
-            for raw in _search(subreddit, keyword, limit_per_keyword, after):
+            queries += 1
+            result = _search(subreddit, keyword, limit_per_keyword, after)
+            if result is None:  # query gave up after repeated timeouts
+                timed_out += 1
+                continue
+            for raw in result:
                 cid = raw.get("id")
                 body = (raw.get("body") or "").strip()
                 if not cid or cid in seen_ids:
@@ -75,17 +82,27 @@ def search_comments(
                     "created_utc": raw.get("created_utc", 0) or 0,
                 })
 
+    # If every query timed out, the archive is overloaded — say so instead of
+    # silently returning nothing.
+    if queries and timed_out == queries:
+        raise RuntimeError(
+            "Arctic Shift timed out on every query — its server is likely "
+            "overloaded right now. Wait a minute and try again, or use fewer "
+            "subreddits / a narrower time range."
+        )
+
     return comments
 
 
 def _search(subreddit: str, keyword: str, limit: int, after: str | None,
-            max_retries: int = 3) -> list[dict]:
-    """Run one comment body search; returns raw Arctic Shift comment dicts.
+            max_retries: int = 3) -> list[dict] | None:
+    """Run one comment body search.
 
-    Arctic Shift intermittently times out on body searches, replying with a
-    422 + "Timeout" message. Those are transient, so we retry with backoff.
-    Genuine search timeouts that never succeed are skipped (return []) rather
-    than failing the whole fetch.
+    Returns a list of raw Arctic Shift comment dicts on success (possibly
+    empty if there were no matches), or None if the query repeatedly timed out
+    and was given up on. Arctic Shift intermittently times out on expensive
+    body searches (as a 422 "Timeout" message or a read timeout); those are
+    transient and retried with backoff.
     """
     params = {
         "subreddit": subreddit,
@@ -101,6 +118,13 @@ def _search(subreddit: str, keyword: str, limit: int, after: str | None,
         try:
             resp = requests.get(f"{BASE}/api/comments/search", headers=HEADERS,
                                 params=params, timeout=30)
+        except requests.Timeout:
+            # Server took too long on this body search — transient, retry/skip.
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            return None
         except requests.RequestException as e:
             raise RuntimeError(f"Arctic Shift request failed: {e}") from e
 
@@ -122,7 +146,7 @@ def _search(subreddit: str, keyword: str, limit: int, after: str | None,
             delay *= 2
             continue
         if transient:
-            return []  # gave up on this one query; skip rather than fail all
+            return None  # gave up on this query after repeated timeouts
 
         resp.raise_for_status()
         return resp.json().get("data", [])
