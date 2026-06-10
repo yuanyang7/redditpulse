@@ -124,8 +124,10 @@ def _search(subreddit: str, keyword: str, limit: int, time_range: TimeRange,
         "sort": "desc",
         # Request only the fields we use — Arctic Shift's docs note this can cut
         # response time/size, which helps avoid timeouts on slow comment search.
-        # (permalink isn't a selectable field, so we rebuild it from link_id.)
-        "fields": "id,author,body,score,controversiality,subreddit,created_utc,link_id",
+        # (permalink isn't a selectable field, so we rebuild it from link_id.
+        # "controversiality" is not a selectable field on this API — Arctic
+        # Shift returns 400 if it's requested, so we don't get it from this source.)
+        "fields": "id,author,body,score,subreddit,created_utc,link_id",
     }
     if time_range.after_date():
         params["after"] = time_range.after_date()
