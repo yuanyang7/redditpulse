@@ -30,6 +30,7 @@ def search_comments(
     sort: str = "relevance",
     time_filter: str = "month",
     progress_callback: Callable[[int, int, str], None] | None = None,
+    stop_check: Callable[[], bool] | None = None,
 ) -> list[dict]:
     """Search Reddit for submissions matching keywords, then collect their comments.
 
@@ -42,6 +43,9 @@ def search_comments(
         time_filter: Time filter (hour, day, week, month, 6months, year, all).
         progress_callback: If given, called as `progress_callback(done, total,
             description)` before each keyword is searched.
+        stop_check: If given, called before each keyword is searched; if it
+            returns truthy, the search stops early and returns whatever was
+            collected so far.
 
     Returns:
         List of comment dicts ready for db.insert_comments().
@@ -63,6 +67,10 @@ def search_comments(
     topic_words, context_words = _extract_word_groups(keywords)
 
     for i, keyword in enumerate(keywords):
+        if stop_check and stop_check():
+            if progress_callback:
+                progress_callback(i, len(keywords), "Stopped")
+            return comments
         if progress_callback:
             progress_callback(i, len(keywords), f"\"{keyword}\"")
         for submission in subreddit.search(keyword, sort=sort, time_filter=search_filter, limit=limit_per_keyword):

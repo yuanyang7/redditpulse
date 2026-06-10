@@ -45,6 +45,7 @@ def search_topic(
     min_relevance: float | None = None,
     keywords: list[str] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
+    stop_check: Callable[[], bool] | None = None,
 ) -> dict:
     """Fetch Reddit comments for a topic. Returns status info dict."""
     conn = db.get_connection()
@@ -86,6 +87,7 @@ def search_topic(
             limit_per_keyword=min(limit, 100),
             time_filter=time_filter,
             progress_callback=progress_callback,
+            stop_check=stop_check,
         )
     else:
         reddit = fetcher.get_reddit()
@@ -96,6 +98,7 @@ def search_topic(
             limit_per_keyword=limit,
             time_filter=time_filter,
             progress_callback=progress_callback,
+            stop_check=stop_check,
         )
 
     # Optional semantic relevance filtering
@@ -115,6 +118,8 @@ def search_topic(
     }
     if min_relevance is not None:
         result["filtered_out"] = pre_filter_count - len(comments)
+    if stop_check is not None and stop_check():
+        result["stopped"] = True
     return result
 
 

@@ -44,6 +44,7 @@ def search_comments(
     limit_per_keyword: int = 25,
     time_filter: str = "month",
     progress_callback: Callable[[int, int, str], None] | None = None,
+    stop_check: Callable[[], bool] | None = None,
 ) -> list[dict]:
     """Search Arctic Shift for comments matching keywords across subreddits.
 
@@ -54,6 +55,9 @@ def search_comments(
     `progress_callback(done, total, description)`, where `done` is the number
     of queries completed so far (0 on the first call) and `total` is the
     overall query count.
+
+    If `stop_check` is given, it's called before each query; if it returns
+    truthy, the search stops early and returns whatever was collected so far.
     """
     targets = [s.strip() for s in (subreddits or DEFAULT_SUBREDDITS) if s.strip()]
     after = _after_param(time_filter)
@@ -63,9 +67,15 @@ def search_comments(
     queries = 0
     timed_out = 0
     total_queries = len(keywords) * len(targets)
+    stopped = False
 
     for keyword in keywords:
+        if stopped:
+            break
         for subreddit in targets:
+            if stop_check and stop_check():
+                stopped = True
+                break
             if progress_callback:
                 progress_callback(queries, total_queries, f"r/{subreddit} — \"{keyword}\"")
             queries += 1
@@ -95,11 +105,12 @@ def search_comments(
                 })
 
     if progress_callback:
-        progress_callback(total_queries, total_queries, "Done")
+        progress_callback(total_queries if not stopped else queries, total_queries,
+                          "Stopped" if stopped else "Done")
 
     # If every query timed out, the archive is overloaded — say so instead of
     # silently returning nothing.
-    if queries and timed_out == queries:
+    if not stopped and queries and timed_out == queries:
         raise RuntimeError(
             "Arctic Shift timed out on every query — its server is likely "
             "overloaded right now. Wait a minute and try again, or use fewer "

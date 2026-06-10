@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import threading
 
 import streamlit as st
 import pandas as pd
@@ -209,21 +210,111 @@ def _breakdown_chart(df: pd.DataFrame, dimension: str) -> alt.Chart:
     ).properties(title=dimension)
 
 
-def _run_search(label: str, **kwargs):
-    """Run core.search_topic inside a live status box showing query progress."""
-    with st.status(label, expanded=True) as status:
-        progress = st.progress(0.0)
+def _start_search_job(label: str, kind: str, extra: dict | None = None, **kwargs):
+    """Kick off core.search_topic in a background thread.
 
-        def _on_progress(done, total, desc):
-            progress.progress(done / total if total else 0.0, text=desc)
+    Progress and the eventual result are tracked in
+    st.session_state["search_job"] and rendered live by _search_progress().
+    `kind`/`extra` carry enough context for _search_progress() to build the
+    right summary message once the job finishes.
+    """
+    stop_event = threading.Event()
+    job = {
+        "label": label,
+        "kind": kind,
+        "extra": extra or {},
+        "stop_event": stop_event,
+        "done": 0,
+        "total": 0,
+        "desc": "Starting...",
+        "result": None,
+        "error": None,
+        "finished": False,
+    }
 
+    def _on_progress(done, total, desc):
+        job["done"] = done
+        job["total"] = total
+        job["desc"] = desc
+
+    def _worker():
         try:
-            result = core.search_topic(progress_callback=_on_progress, **kwargs)
-            status.update(label="Done", state="complete", expanded=False)
-            return result
-        except Exception:
-            status.update(label="Failed", state="error")
-            raise
+            job["result"] = core.search_topic(
+                progress_callback=_on_progress,
+                stop_check=stop_event.is_set,
+                **kwargs,
+            )
+        except Exception as e:
+            job["error"] = e
+        finally:
+            job["finished"] = True
+
+    job["thread"] = threading.Thread(target=_worker, daemon=True)
+    st.session_state["search_job"] = job
+    job["thread"].start()
+
+
+def _job_message(job: dict) -> tuple[str, str]:
+    """Build a (level, message) pair summarizing a finished search job."""
+    if job["error"]:
+        return "error", str(job["error"])
+
+    result = job["result"]
+    extra = job["extra"]
+    stopped = result.get("stopped", False)
+
+    if job["kind"] == "search":
+        msg = (
+            f"Found {result['fetched']} comments, "
+            f"inserted {result['new_comments']} new "
+            f"(total: {result['total_comments']})"
+        )
+        if "filtered_out" in result:
+            msg += f" — filtered out {result['filtered_out']} irrelevant"
+        if extra["topic_to_use"] != extra["new_topic_text"]:
+            msg = f"Created '{extra['topic_to_use']}' — " + msg
+    elif job["kind"] == "refresh":
+        msg = f"+{result['new_comments']} new comments"
+    elif job["kind"] == "refetch":
+        msg = f"Re-fetched: {result['new_comments']} comments (analyses kept)"
+    else:  # reset
+        msg = "Comments & analyses cleared, re-fetched"
+
+    if stopped:
+        return "warning", "Stopped early — " + msg
+    return "success", msg
+
+
+@st.fragment(run_every=0.5)
+def _search_progress():
+    """Render the live progress/Stop UI for a background search job, if any."""
+    job = st.session_state.get("search_job")
+    if not job:
+        return
+
+    with st.status(job["label"], expanded=True) as status_box:
+        total = job["total"]
+        st.progress(job["done"] / total if total else 0.0, text=job["desc"])
+
+        if not job["finished"]:
+            if st.button("Stop", use_container_width=True, key="stop_search_job"):
+                job["stop_event"].set()
+        else:
+            level, msg = _job_message(job)
+            if level == "error":
+                status_box.update(label="Failed", state="error", expanded=False)
+            elif level == "warning":
+                status_box.update(label="Stopped", state="error", expanded=False)
+            else:
+                status_box.update(label="Done", state="complete", expanded=False)
+
+            st.session_state["search_flash"] = (level, msg)
+            if job["kind"] == "search" and level != "error":
+                st.session_state.pop("keyword_review", None)
+                st.session_state["pending_topic_select"] = job["extra"]["topic_to_use"]
+            del st.session_state["search_job"]
+            _refresh_topics()
+            st.rerun()
 
 
 if "topics" not in st.session_state:
@@ -232,6 +323,14 @@ if "topics" not in st.session_state:
 with st.sidebar:
     st.title("📊 RedditPulse")
     st.markdown("---")
+
+    _search_progress()
+    job_running = "search_job" in st.session_state
+
+    flash = st.session_state.pop("search_flash", None)
+    if flash:
+        level, msg = flash
+        getattr(st, level)(msg)
 
     # ------ Existing topics ------
     topics = st.session_state["topics"]
@@ -314,83 +413,57 @@ with st.sidebar:
     min_relevance = st.slider("Min relevance (0 = off)", 0.0, 1.0, 0.3, 0.05,
                               help="Semantic similarity threshold. Try 0.3 to filter off-topic comments.")
 
-    if st.button("Search", use_container_width=True, type="primary"):
+    if st.button("Search", use_container_width=True, type="primary", disabled=job_running):
         if not new_topic.strip():
             st.warning("Enter a topic first.")
         else:
             topic_to_use = core.next_available_topic_name(new_topic.strip(), topic_names)
-            try:
-                result = _run_search(
-                    f"Searching Reddit for \"{topic_to_use}\"...",
-                    topic=topic_to_use,
-                    subreddits=subreddits.split(",") if subreddits.strip() else None,
-                    limit=limit,
-                    time_filter=time_filter,
-                    public=use_public,
-                    refresh=True,
-                    min_relevance=min_relevance if min_relevance > 0 else None,
-                    keywords=keyword_override,
-                )
-                _refresh_topics()
-                st.session_state.pop("keyword_review", None)
-                st.session_state["pending_topic_select"] = topic_to_use
-                msg = (
-                    f"Found {result['fetched']} comments, "
-                    f"inserted {result['new_comments']} new "
-                    f"(total: {result['total_comments']})"
-                )
-                if "filtered_out" in result:
-                    msg += f" — filtered out {result['filtered_out']} irrelevant"
-                if topic_to_use != new_topic.strip():
-                    msg = f"Created '{topic_to_use}' — " + msg
-                st.success(msg)
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
+            _start_search_job(
+                f"Searching Reddit for \"{topic_to_use}\"...",
+                kind="search",
+                extra={"topic_to_use": topic_to_use, "new_topic_text": new_topic.strip()},
+                topic=topic_to_use,
+                subreddits=subreddits.split(",") if subreddits.strip() else None,
+                limit=limit,
+                time_filter=time_filter,
+                public=use_public,
+                refresh=True,
+                min_relevance=min_relevance if min_relevance > 0 else None,
+                keywords=keyword_override,
+            )
+            st.rerun()
 
     # ------ Refresh / Reset for selected topic ------
     if selected:
         st.markdown("---")
         st.markdown(f"**Active:** {selected}")
-        if st.button("Refresh", use_container_width=True):
-            try:
-                result = _run_search(
-                    "Fetching more comments...",
-                    topic=selected, refresh=True, public=use_public,
-                    min_relevance=min_relevance if min_relevance > 0 else None,
-                )
-                _refresh_topics()
-                st.success(f"+{result['new_comments']} new comments")
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
-        if st.button("Re-fetch", use_container_width=True,
+        if st.button("Refresh", use_container_width=True, disabled=job_running):
+            _start_search_job(
+                "Fetching more comments...",
+                kind="refresh",
+                topic=selected, refresh=True, public=use_public,
+                min_relevance=min_relevance if min_relevance > 0 else None,
+            )
+            st.rerun()
+        if st.button("Re-fetch", use_container_width=True, disabled=job_running,
                      help="Clear comments and re-fetch, keeping keywords and past analyses"):
-            try:
-                result = _run_search(
-                    "Re-fetching comments...",
-                    topic=selected, reset_comments=True, keep_analyses=True,
-                    public=use_public,
-                    min_relevance=min_relevance if min_relevance > 0 else None,
-                )
-                _refresh_topics()
-                st.success(f"Re-fetched: {result['new_comments']} comments (analyses kept)")
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
-        if st.button("Reset All", use_container_width=True,
+            _start_search_job(
+                "Re-fetching comments...",
+                kind="refetch",
+                topic=selected, reset_comments=True, keep_analyses=True,
+                public=use_public,
+                min_relevance=min_relevance if min_relevance > 0 else None,
+            )
+            st.rerun()
+        if st.button("Reset All", use_container_width=True, disabled=job_running,
                      help="Clear comments AND analyses, then re-fetch"):
-            try:
-                _run_search(
-                    "Resetting...",
-                    topic=selected, reset_comments=True, public=use_public,
-                    min_relevance=min_relevance if min_relevance > 0 else None,
-                )
-                _refresh_topics()
-                st.success("Comments & analyses cleared, re-fetched")
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
+            _start_search_job(
+                "Resetting...",
+                kind="reset",
+                topic=selected, reset_comments=True, public=use_public,
+                min_relevance=min_relevance if min_relevance > 0 else None,
+            )
+            st.rerun()
 
         st.markdown("---")
         with st.expander("⚠️ Danger zone"):
