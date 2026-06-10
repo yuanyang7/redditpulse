@@ -77,6 +77,12 @@ def _get(url: str, params: dict, max_retries: int = 4) -> requests.Response:
     raise RuntimeError("Reddit RSS request failed after retries.")
 
 
+# Anonymous RSS quota is only a few dozen requests per ~10-minute window, so
+# keep total requests small: at most a few keywords, a few posts each.
+MAX_KEYWORDS = 3
+MAX_POSTS_PER_KEYWORD = 4
+
+
 def search_comments(
     keywords: list[str],
     subreddits: list[str] | None = None,
@@ -86,12 +92,15 @@ def search_comments(
     """Search Reddit via public RSS feeds, no OAuth needed.
 
     Note: Reddit caps public search at 25 results per query, and RSS feeds
-    do not include comment scores (all scores default to 0).
+    do not include comment scores (all scores default to 0). To stay under
+    Reddit's small anonymous rate-limit window, this fetches from at most
+    MAX_KEYWORDS keywords and MAX_POSTS_PER_KEYWORD posts each.
     """
     seen_ids: set[str] = set()
     comments: list[dict] = []
+    topic_words, context_words = _extract_word_groups(keywords)
 
-    for keyword in keywords:
+    for keyword in keywords[:MAX_KEYWORDS]:
         if subreddits:
             permalinks = []
             for sr in subreddits:
@@ -101,8 +110,7 @@ def search_comments(
             permalinks = _search_submissions(keyword, subreddit=None,
                                              limit=limit_per_keyword, time_filter=time_filter)
 
-        topic_words, context_words = _extract_word_groups(keywords)
-        for permalink in permalinks:
+        for permalink in permalinks[:MAX_POSTS_PER_KEYWORD]:
             post_comments = _fetch_comments(permalink)
             for c in post_comments:
                 if c["reddit_id"] in seen_ids:
