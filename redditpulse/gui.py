@@ -59,8 +59,9 @@ h2, h3 {
     display: inline-block;
     background: var(--rp-coral);
     color: #FFFFFF !important;
-    padding: 0.15rem 0.6rem;
+    padding: 0.4rem 1rem;
     border: 2px solid var(--rp-ink);
+    line-height: 1.25;
 }
 
 /* Sidebar — flat solid color block with hard edge */
@@ -85,9 +86,16 @@ h2, h3 {
     font-weight: 700;
     background: var(--rp-coral);
     color: #FFFFFF;
-    padding: 0.5rem 1.2rem;
+    padding: 0.55rem 1rem;
     box-shadow: none;
     transition: background 0.1s ease;
+    line-height: 1.3;
+    white-space: normal;
+    min-height: 2.6rem;
+}
+/* Keep button label text centered and off the edges */
+.stButton > button p, .stDownloadButton > button p, .stFormSubmitButton > button p {
+    margin: 0;
 }
 .stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {
     background: var(--rp-ink);
@@ -124,6 +132,31 @@ h2, h3 {
     box-shadow: none;
 }
 [data-testid="stMetricValue"] { color: var(--rp-coral); font-weight: 700; }
+
+/* Number input — unify field + steppers into one flat bordered block */
+[data-testid="stNumberInput"] > div {
+    border: 2px solid var(--rp-ink) !important;
+    border-radius: 0 !important;
+    overflow: hidden;
+}
+[data-testid="stNumberInput"] input {
+    border: none !important;
+}
+[data-testid="stNumberInput"] button {
+    border: none !important;
+    border-left: 2px solid var(--rp-ink) !important;
+    border-radius: 0 !important;
+    background: var(--rp-cream) !important;
+    color: var(--rp-ink) !important;
+}
+[data-testid="stNumberInput"] button:hover {
+    background: var(--rp-coral) !important;
+    color: #FFFFFF !important;
+}
+
+/* Hide Streamlit's default top header bar so the sidebar isn't cut in half */
+header[data-testid="stHeader"] { background: transparent; height: 0; }
+[data-testid="stSidebar"] > div:first-child { padding-top: 1.25rem; }
 
 /* Dividers — solid ink line */
 hr { border-color: var(--rp-ink); border-top-width: 2px; }
@@ -190,7 +223,7 @@ with st.sidebar:
     min_relevance = st.slider("Min relevance (0 = off)", 0.0, 1.0, 0.3, 0.05,
                               help="Semantic similarity threshold. Try 0.3 to filter off-topic comments.")
 
-    if st.button("🔍 Search", use_container_width=True, type="primary"):
+    if st.button("Search", use_container_width=True, type="primary"):
         if not new_topic.strip():
             st.warning("Enter a topic first.")
         else:
@@ -223,43 +256,39 @@ with st.sidebar:
     if selected:
         st.markdown("---")
         st.markdown(f"**Active:** {selected}")
-        rc1, rc2, rc3 = st.columns(3)
-        with rc1:
-            if st.button("🔄 Refresh", use_container_width=True):
-                with st.spinner("Fetching more comments..."):
-                    try:
-                        result = core.search_topic(selected, refresh=True, public=use_public,
-                                                   min_relevance=min_relevance if min_relevance > 0 else None)
-                        _refresh_topics()
-                        st.success(f"+{result['new_comments']} new comments")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e))
-        with rc2:
-            if st.button("🔁 Re-fetch", use_container_width=True,
-                         help="Clear comments and re-fetch, keeping keywords and past analyses"):
-                with st.spinner("Re-fetching comments..."):
-                    try:
-                        result = core.search_topic(selected, reset_comments=True, keep_analyses=True,
-                                                   public=use_public,
-                                                   min_relevance=min_relevance if min_relevance > 0 else None)
-                        _refresh_topics()
-                        st.success(f"Re-fetched: {result['new_comments']} comments (analyses kept)")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e))
-        with rc3:
-            if st.button("🗑 Reset All", use_container_width=True,
-                         help="Clear comments AND analyses, then re-fetch"):
-                with st.spinner("Resetting..."):
-                    try:
-                        core.search_topic(selected, reset_comments=True, public=use_public,
-                                          min_relevance=min_relevance if min_relevance > 0 else None)
-                        _refresh_topics()
-                        st.success("Comments & analyses cleared, re-fetched")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e))
+        if st.button("Refresh", use_container_width=True):
+            with st.spinner("Fetching more comments..."):
+                try:
+                    result = core.search_topic(selected, refresh=True, public=use_public,
+                                               min_relevance=min_relevance if min_relevance > 0 else None)
+                    _refresh_topics()
+                    st.success(f"+{result['new_comments']} new comments")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        if st.button("Re-fetch", use_container_width=True,
+                     help="Clear comments and re-fetch, keeping keywords and past analyses"):
+            with st.spinner("Re-fetching comments..."):
+                try:
+                    result = core.search_topic(selected, reset_comments=True, keep_analyses=True,
+                                               public=use_public,
+                                               min_relevance=min_relevance if min_relevance > 0 else None)
+                    _refresh_topics()
+                    st.success(f"Re-fetched: {result['new_comments']} comments (analyses kept)")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        if st.button("Reset All", use_container_width=True,
+                     help="Clear comments AND analyses, then re-fetch"):
+            with st.spinner("Resetting..."):
+                try:
+                    core.search_topic(selected, reset_comments=True, public=use_public,
+                                      min_relevance=min_relevance if min_relevance > 0 else None)
+                    _refresh_topics()
+                    st.success("Comments & analyses cleared, re-fetched")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
 
         st.markdown("---")
         st.markdown("**New version of this topic**")
@@ -268,7 +297,7 @@ with st.sidebar:
             help="Creates a new topic with the same keywords and fetches fresh "
                  "comments. The original topic is left untouched.",
         )
-        if st.button("📑 Create & Fetch", use_container_width=True):
+        if st.button("Create & Fetch", use_container_width=True):
             dup_name = dup_name.strip()
             if not dup_name:
                 st.warning("Enter a name for the new version.")
@@ -295,7 +324,7 @@ with st.sidebar:
         with st.expander("⚠️ Danger zone"):
             st.markdown(f"Permanently delete **{selected}**, including all its comments and analyses.")
             confirm_delete = st.checkbox(f"I'm sure I want to delete '{selected}'", key="confirm_delete")
-            if st.button("🗑 Delete topic", use_container_width=True, disabled=not confirm_delete):
+            if st.button("Delete topic", use_container_width=True, disabled=not confirm_delete):
                 try:
                     core.delete_topic(selected)
                     _refresh_topics()
@@ -316,7 +345,7 @@ if not selected:
     st.stop()
 
 tab_dash, tab_analyze, tab_browse, tab_label, tab_evaluate, tab_export = st.tabs(
-    ["📈 Dashboard", "🔬 Analyze", "💬 Browse", "🏷 Label", "📊 Evaluate", "📁 Export"]
+    ["Dashboard", "Analyze", "Browse", "Label", "Evaluate", "Export"]
 )
 
 # ========================== DASHBOARD TAB ==========================
@@ -397,7 +426,7 @@ with tab_analyze:
 
     reset_analyses = st.checkbox("Clear previous analyses first", value=False, key="reset_analyses")
 
-    if st.button("🔬 Run Analysis", use_container_width=True, type="primary"):
+    if st.button("Run Analysis", use_container_width=True, type="primary"):
         mode = "sentiment-only" if sentiment_only else "full"
         with st.spinner(f"Running {mode} analysis ({sentiment_model}) on {selected}..."):
             try:
@@ -486,7 +515,7 @@ with tab_browse:
     with bc2:
         browse_limit = st.number_input("Max comments", min_value=5, max_value=200, value=20, key="browse_limit")
 
-    if st.button("💬 Load Comments", use_container_width=True):
+    if st.button("Load Comments", use_container_width=True):
         with st.spinner("Loading comments..."):
             try:
                 data = core.browse_comments(
@@ -563,19 +592,19 @@ with tab_label:
                 st.markdown(c["body"])
                 b1, b2, b3, b4 = st.columns(4)
                 with b1:
-                    if st.button("🟢 Positive", key=f"pos_{c['id']}"):
+                    if st.button("Positive", key=f"pos_{c['id']}"):
                         core.label_comment(selected, c["id"], "positive")
                         st.rerun()
                 with b2:
-                    if st.button("🟡 Neutral", key=f"neu_{c['id']}"):
+                    if st.button("Neutral", key=f"neu_{c['id']}"):
                         core.label_comment(selected, c["id"], "neutral")
                         st.rerun()
                 with b3:
-                    if st.button("🔴 Negative", key=f"neg_{c['id']}"):
+                    if st.button("Negative", key=f"neg_{c['id']}"):
                         core.label_comment(selected, c["id"], "negative")
                         st.rerun()
                 with b4:
-                    if current and st.button("✖ Clear", key=f"clr_{c['id']}"):
+                    if current and st.button("Clear", key=f"clr_{c['id']}"):
                         core.label_comment(selected, c["id"], None)
                         st.rerun()
 
@@ -589,7 +618,7 @@ with tab_evaluate:
     with ev1:
         model_choice = st.selectbox("Model to evaluate", ["vader", "textblob", "claude"], key="eval_model")
     with ev2:
-        run_eval = st.button("▶ Run Evaluation", use_container_width=True, type="primary")
+        run_eval = st.button("Run Evaluation", use_container_width=True, type="primary")
 
     if run_eval:
         try:
