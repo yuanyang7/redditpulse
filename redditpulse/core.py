@@ -210,10 +210,27 @@ def browse_comments(
 
     comments = db.get_comments_for_topic(conn, topic_row["id"], limit=2000)
 
+    # Reuse the latest analysis's per-comment labels (which reflect whichever
+    # model was used — VADER or Claude) so Browse matches the Analyze tab.
+    # Fall back to computing VADER on the fly when no analysis exists yet.
+    stored = {}
+    latest = db.get_latest_analysis(conn, topic_row["id"])
+    if latest and latest.get("raw_result"):
+        try:
+            raw = json.loads(latest["raw_result"])
+            stored = {s["reddit_id"]: s for s in raw.get("per_comment_sentiment", [])}
+        except (ValueError, KeyError):
+            stored = {}
+
     filtered = []
     for c in comments:
-        compound = vader.polarity_scores(c["body"])["compound"]
-        lbl = _sentiment_label(compound)
+        s = stored.get(c["reddit_id"])
+        if s is not None:
+            compound = s.get("compound", 0.0)
+            lbl = s.get("label", _sentiment_label(compound))
+        else:
+            compound = vader.polarity_scores(c["body"])["compound"]
+            lbl = _sentiment_label(compound)
         if lbl == sentiment:
             filtered.append({
                 "body": c["body"],
