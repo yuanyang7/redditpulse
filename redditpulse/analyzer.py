@@ -2,6 +2,7 @@
 
 import json
 import os
+from collections import Counter
 from anthropic import Anthropic
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from dotenv import load_dotenv
@@ -160,10 +161,10 @@ def analyze_themes(topic: str, comments: list[dict]) -> dict:
                 "topic about phones, brands like \"iPhone\", \"Samsung\"; for a topic "
                 "about diets, types like \"Keto\", \"Vegan\"), return "
                 "{{\"dimension\": short label naming the category type (e.g. \"Genre\", "
-                "\"Brand\", \"Diet Type\"), \"categories\": array of {{\"category\": "
-                "string, \"percentage\": number}} ranked by percentage, summing to "
-                "approximately 100}}. Omit this field entirely if no such breakdown "
-                "is meaningful for this topic.\n\n"
+                "\"Brand\", \"Diet Type\"), \"categories\": array of 3-6 category name "
+                "strings that comments could be classified into}}. Do not estimate "
+                "percentages — just name the categories. Omit this field entirely if no "
+                "such breakdown is meaningful for this topic.\n\n"
                 "Return ONLY valid JSON, no explanation outside the JSON."
             ),
         }],
@@ -202,6 +203,57 @@ def classify_sentiment_batch(texts: list[str], batch_size: int = 50) -> list[str
     return labels
 
 
+def classify_subtopics_batch(texts: list[str], dimension: str, categories: list[str],
+                             batch_size: int = 50) -> list[str]:
+    """Use Claude (Haiku) to classify each text into one of `categories`, or "Other"."""
+    client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    options = categories + ["Other"]
+    labels = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        numbered = "\n".join(f"{j + 1}. {t[:500]}" for j, t in enumerate(batch))
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=batch_size * 20 + 100,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Classify each numbered Reddit comment below by \"{dimension}\" "
+                    f"into exactly one of these categories: {json.dumps(options)}.\n\n"
+                    "If a comment doesn't clearly fit any named category, use \"Other\".\n\n"
+                    f"{numbered}\n\n"
+                    "Return ONLY a JSON array of strings (one category per comment, in "
+                    "order), no explanation."
+                ),
+            }],
+        )
+        text = response.content[0].text.strip()
+        start = text.index("[")
+        end = text.rindex("]") + 1
+        labels.extend(json.loads(text[start:end]))
+    return labels
+
+
+def _compute_subtopic_breakdown(comments: list[dict], breakdown: dict) -> dict | None:
+    """Replace estimated category names with real percentages via classify-then-count."""
+    categories = breakdown.get("categories")
+    if not categories:
+        return None
+    dimension = breakdown.get("dimension", "Category")
+    labels = classify_subtopics_batch([c["body"] for c in comments], dimension, categories)
+    counts = Counter(labels)
+    total = len(labels)
+    if not total:
+        return None
+    result = []
+    for name in categories + ["Other"]:
+        pct = round(counts.get(name, 0) / total * 100, 1)
+        if pct > 0:
+            result.append({"category": name, "percentage": pct})
+    result.sort(key=lambda c: c["percentage"], reverse=True)
+    return {"dimension": dimension, "categories": result}
+
+
 def run_full_analysis(topic: str, comments: list[dict], skip_claude: bool = False,
                       sentiment_model: str = "vader") -> dict:
     """Run sentiment analysis, and optionally theme analysis via Claude.
@@ -213,6 +265,12 @@ def run_full_analysis(topic: str, comments: list[dict], skip_claude: bool = Fals
     else:
         sentiment = analyze_sentiment(comments)
     themes = analyze_themes(topic, comments) if not skip_claude else {}
+    if themes.get("subtopic_breakdown"):
+        recomputed = _compute_subtopic_breakdown(comments, themes["subtopic_breakdown"])
+        if recomputed:
+            themes["subtopic_breakdown"] = recomputed
+        else:
+            themes.pop("subtopic_breakdown", None)
     return {
         "sentiment": {k: v for k, v in sentiment.items() if k != "scores"},
         "themes": themes,
