@@ -32,6 +32,7 @@ _THEME_CSS = """
 
 :root {
     --rp-coral: #FF4D6D;   /* accent */
+    --rp-coral-dark: #E0344F; /* button hover */
     --rp-ink:   #181818;   /* text / borders */
     --rp-teal:  #1FB6A6;
     --rp-blue:  #2D5BFF;
@@ -59,9 +60,9 @@ h2, h3 {
     display: inline-block;
     background: var(--rp-coral);
     color: #FFFFFF !important;
-    padding: 0.4rem 1rem;
+    padding: 0.4rem 1.4rem;
     border: 2px solid var(--rp-ink);
-    line-height: 1.25;
+    line-height: 1.3;
 }
 
 /* Sidebar — flat solid color block with hard edge */
@@ -79,27 +80,43 @@ h2, h3 {
     color: var(--rp-ink) !important;
 }
 
-/* Buttons — flat solid blocks, hard border, no shadow/gradient */
-.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
-    border-radius: 0;
-    border: 2px solid var(--rp-ink);
-    font-weight: 700;
-    background: var(--rp-coral);
-    color: #FFFFFF;
-    padding: 0.55rem 1rem;
-    box-shadow: none;
+/* Buttons — flat solid blocks, hard border, no shadow/gradient.
+   !important + sidebar-scoped overrides so every button is identical and the
+   sidebar's global text-color rule can't repaint the label. */
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button,
+[data-testid="stSidebar"] .stButton > button {
+    border-radius: 0 !important;
+    border: 2px solid var(--rp-ink) !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 700 !important;
+    background: var(--rp-coral) !important;
+    color: #FFFFFF !important;
+    padding: 0.55rem 1.4rem !important;
+    box-shadow: none !important;
     transition: background 0.1s ease;
     line-height: 1.3;
     white-space: normal;
-    min-height: 2.6rem;
+    min-height: 2.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
 }
-/* Keep button label text centered and off the edges */
-.stButton > button p, .stDownloadButton > button p, .stFormSubmitButton > button p {
-    margin: 0;
+/* Label text: centered, no stray margins, always white */
+.stButton > button p, .stDownloadButton > button p, .stFormSubmitButton > button p,
+[data-testid="stSidebar"] .stButton > button p {
+    margin: 0 !important;
+    color: #FFFFFF !important;
 }
-.stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {
-    background: var(--rp-ink);
-    color: #FFFFFF;
+/* Consistent hover/focus/active — darker coral, never black */
+.stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover,
+.stButton > button:focus, .stButton > button:active,
+[data-testid="stSidebar"] .stButton > button:hover,
+[data-testid="stSidebar"] .stButton > button:focus {
+    background: var(--rp-coral-dark) !important;
+    color: #FFFFFF !important;
+    border-color: var(--rp-ink) !important;
+    box-shadow: none !important;
 }
 
 /* Inputs — flat, hard 2px border */
