@@ -2,6 +2,7 @@
 
 import json
 import re
+from typing import Callable
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -38,6 +39,7 @@ def search_topic(
     keep_analyses: bool = False,
     min_relevance: float | None = None,
     keywords: list[str] | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     """Fetch Reddit comments for a topic. Returns status info dict."""
     conn = db.get_connection()
@@ -78,6 +80,7 @@ def search_topic(
             subreddits=subreddits,
             limit_per_keyword=min(limit, 100),
             time_filter=time_filter,
+            progress_callback=progress_callback,
         )
     else:
         reddit = fetcher.get_reddit()
@@ -87,6 +90,7 @@ def search_topic(
             subreddits=subreddits,
             limit_per_keyword=limit,
             time_filter=time_filter,
+            progress_callback=progress_callback,
         )
 
     # Optional semantic relevance filtering

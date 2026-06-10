@@ -2,6 +2,8 @@
 
 import os
 import time as _time
+from typing import Callable
+
 import praw
 from dotenv import load_dotenv
 
@@ -27,6 +29,7 @@ def search_comments(
     limit_per_keyword: int = 50,
     sort: str = "relevance",
     time_filter: str = "month",
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> list[dict]:
     """Search Reddit for submissions matching keywords, then collect their comments.
 
@@ -37,6 +40,8 @@ def search_comments(
         limit_per_keyword: Max submissions to fetch per keyword.
         sort: Sort order for search (relevance, hot, top, new, comments).
         time_filter: Time filter (hour, day, week, month, 6months, year, all).
+        progress_callback: If given, called as `progress_callback(done, total,
+            description)` before each keyword is searched.
 
     Returns:
         List of comment dicts ready for db.insert_comments().
@@ -57,7 +62,9 @@ def search_comments(
     comments: list[dict] = []
     topic_words, context_words = _extract_word_groups(keywords)
 
-    for keyword in keywords:
+    for i, keyword in enumerate(keywords):
+        if progress_callback:
+            progress_callback(i, len(keywords), f"\"{keyword}\"")
         for submission in subreddit.search(keyword, sort=sort, time_filter=search_filter, limit=limit_per_keyword):
             submission.comments.replace_more(limit=0)  # skip "load more" stubs
             for comment in submission.comments.list():
@@ -85,6 +92,9 @@ def search_comments(
                     "permalink": f"https://reddit.com{comment.permalink}",
                     "created_utc": comment.created_utc,
                 })
+
+    if progress_callback:
+        progress_callback(len(keywords), len(keywords), "Done")
 
     return comments
 

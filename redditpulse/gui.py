@@ -191,6 +191,32 @@ def _refresh_topics():
     st.session_state["topics"] = core.list_topics()
 
 
+def _emotions_chart(df: pd.DataFrame) -> alt.Chart:
+    """Build a horizontal bar chart of emotions ranked by prevalence."""
+    return alt.Chart(df).mark_bar(color="#FF6B4A").encode(
+        x=alt.X("prevalence:Q", title="Prevalence"),
+        y=alt.Y("emotion:N", title="", sort="-x"),
+        tooltip=["emotion", "prevalence"],
+    )
+
+
+def _run_search(label: str, **kwargs):
+    """Run core.search_topic inside a live status box showing query progress."""
+    with st.status(label, expanded=True) as status:
+        progress = st.progress(0.0)
+
+        def _on_progress(done, total, desc):
+            progress.progress(done / total if total else 0.0, text=desc)
+
+        try:
+            result = core.search_topic(progress_callback=_on_progress, **kwargs)
+            status.update(label="Done", state="complete", expanded=False)
+            return result
+        except Exception:
+            status.update(label="Failed", state="error")
+            raise
+
+
 if "topics" not in st.session_state:
     _refresh_topics()
 
@@ -276,72 +302,78 @@ with st.sidebar:
             st.warning("Enter a topic first.")
         else:
             topic_to_use = core.next_available_topic_name(new_topic.strip(), topic_names)
-            with st.spinner(f"Searching Reddit for \"{topic_to_use}\"..."):
-                try:
-                    result = core.search_topic(
-                        topic=topic_to_use,
-                        subreddits=subreddits.split(",") if subreddits.strip() else None,
-                        limit=limit,
-                        time_filter=time_filter,
-                        public=use_public,
-                        refresh=True,
-                        min_relevance=min_relevance if min_relevance > 0 else None,
-                        keywords=keyword_override,
-                    )
-                    _refresh_topics()
-                    st.session_state.pop("keyword_review", None)
-                    st.session_state["pending_topic_select"] = topic_to_use
-                    msg = (
-                        f"Found {result['fetched']} comments, "
-                        f"inserted {result['new_comments']} new "
-                        f"(total: {result['total_comments']})"
-                    )
-                    if "filtered_out" in result:
-                        msg += f" — filtered out {result['filtered_out']} irrelevant"
-                    if topic_to_use != new_topic.strip():
-                        msg = f"Created '{topic_to_use}' — " + msg
-                    st.success(msg)
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
+            try:
+                result = _run_search(
+                    f"Searching Reddit for \"{topic_to_use}\"...",
+                    topic=topic_to_use,
+                    subreddits=subreddits.split(",") if subreddits.strip() else None,
+                    limit=limit,
+                    time_filter=time_filter,
+                    public=use_public,
+                    refresh=True,
+                    min_relevance=min_relevance if min_relevance > 0 else None,
+                    keywords=keyword_override,
+                )
+                _refresh_topics()
+                st.session_state.pop("keyword_review", None)
+                st.session_state["pending_topic_select"] = topic_to_use
+                msg = (
+                    f"Found {result['fetched']} comments, "
+                    f"inserted {result['new_comments']} new "
+                    f"(total: {result['total_comments']})"
+                )
+                if "filtered_out" in result:
+                    msg += f" — filtered out {result['filtered_out']} irrelevant"
+                if topic_to_use != new_topic.strip():
+                    msg = f"Created '{topic_to_use}' — " + msg
+                st.success(msg)
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
 
     # ------ Refresh / Reset for selected topic ------
     if selected:
         st.markdown("---")
         st.markdown(f"**Active:** {selected}")
         if st.button("Refresh", use_container_width=True):
-            with st.spinner("Fetching more comments..."):
-                try:
-                    result = core.search_topic(selected, refresh=True, public=use_public,
-                                               min_relevance=min_relevance if min_relevance > 0 else None)
-                    _refresh_topics()
-                    st.success(f"+{result['new_comments']} new comments")
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
+            try:
+                result = _run_search(
+                    "Fetching more comments...",
+                    topic=selected, refresh=True, public=use_public,
+                    min_relevance=min_relevance if min_relevance > 0 else None,
+                )
+                _refresh_topics()
+                st.success(f"+{result['new_comments']} new comments")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
         if st.button("Re-fetch", use_container_width=True,
                      help="Clear comments and re-fetch, keeping keywords and past analyses"):
-            with st.spinner("Re-fetching comments..."):
-                try:
-                    result = core.search_topic(selected, reset_comments=True, keep_analyses=True,
-                                               public=use_public,
-                                               min_relevance=min_relevance if min_relevance > 0 else None)
-                    _refresh_topics()
-                    st.success(f"Re-fetched: {result['new_comments']} comments (analyses kept)")
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
+            try:
+                result = _run_search(
+                    "Re-fetching comments...",
+                    topic=selected, reset_comments=True, keep_analyses=True,
+                    public=use_public,
+                    min_relevance=min_relevance if min_relevance > 0 else None,
+                )
+                _refresh_topics()
+                st.success(f"Re-fetched: {result['new_comments']} comments (analyses kept)")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
         if st.button("Reset All", use_container_width=True,
                      help="Clear comments AND analyses, then re-fetch"):
-            with st.spinner("Resetting..."):
-                try:
-                    core.search_topic(selected, reset_comments=True, public=use_public,
-                                      min_relevance=min_relevance if min_relevance > 0 else None)
-                    _refresh_topics()
-                    st.success("Comments & analyses cleared, re-fetched")
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
+            try:
+                _run_search(
+                    "Resetting...",
+                    topic=selected, reset_comments=True, public=use_public,
+                    min_relevance=min_relevance if min_relevance > 0 else None,
+                )
+                _refresh_topics()
+                st.success("Comments & analyses cleared, re-fetched")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
 
         st.markdown("---")
         with st.expander("⚠️ Danger zone"):
@@ -421,6 +453,14 @@ with tab_dash:
                             tooltip=["theme", "count", "summary"],
                         )
                         st.altair_chart(chart, use_container_width=True)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+
+            if "emotions" in themes:
+                st.subheader("Emotions")
+                df = pd.DataFrame(themes["emotions"][:8])
+                if not df.empty:
+                    if "prevalence" in df.columns:
+                        st.altair_chart(_emotions_chart(df), use_container_width=True)
                     st.dataframe(df, use_container_width=True, hide_index=True)
 
             if "key_insights" in themes:
@@ -554,7 +594,7 @@ with tab_analyze:
         analyze_limit = st.number_input("Max comments", min_value=10, max_value=2000, value=500, key="analyze_limit")
     with ac2:
         sentiment_model = st.selectbox(
-            "Sentiment model", ["vader", "claude"], key="sentiment_model_choice",
+            "Sentiment model", ["claude", "vader"], key="sentiment_model_choice",
             help="vader: local, instant, rule-based. claude: LLM, slower + uses "
                  "API tokens, but far better at sarcasm/context.",
         )
@@ -613,6 +653,8 @@ with tab_analyze:
             st.subheader("Emotions")
             df = pd.DataFrame(themes["emotions"][:8])
             if not df.empty:
+                if "prevalence" in df.columns:
+                    st.altair_chart(_emotions_chart(df), use_container_width=True)
                 st.dataframe(df, use_container_width=True, hide_index=True)
 
         # Opinions

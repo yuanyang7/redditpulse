@@ -12,6 +12,7 @@ caller passes no subreddits, DEFAULT_SUBREDDITS is used.
 
 import time
 from datetime import datetime, timezone, timedelta
+from typing import Callable
 
 import requests
 
@@ -42,11 +43,17 @@ def search_comments(
     subreddits: list[str] | None = None,
     limit_per_keyword: int = 25,
     time_filter: str = "month",
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> list[dict]:
     """Search Arctic Shift for comments matching keywords across subreddits.
 
     For each subreddit x keyword pair, runs a body keyword search. Results are
     deduplicated by comment id.
+
+    If `progress_callback` is given, it's called before each query as
+    `progress_callback(done, total, description)`, where `done` is the number
+    of queries completed so far (0 on the first call) and `total` is the
+    overall query count.
     """
     targets = [s.strip() for s in (subreddits or DEFAULT_SUBREDDITS) if s.strip()]
     after = _after_param(time_filter)
@@ -55,9 +62,12 @@ def search_comments(
     comments: list[dict] = []
     queries = 0
     timed_out = 0
+    total_queries = len(keywords) * len(targets)
 
     for keyword in keywords:
         for subreddit in targets:
+            if progress_callback:
+                progress_callback(queries, total_queries, f"r/{subreddit} — \"{keyword}\"")
             queries += 1
             result = _search(subreddit, keyword, limit_per_keyword, after)
             if result is None:  # query gave up after repeated timeouts
@@ -83,6 +93,9 @@ def search_comments(
                     "permalink": _permalink(sr, raw.get("link_id"), cid),
                     "created_utc": raw.get("created_utc", 0) or 0,
                 })
+
+    if progress_callback:
+        progress_callback(total_queries, total_queries, "Done")
 
     # If every query timed out, the archive is overloaded — say so instead of
     # silently returning nothing.
