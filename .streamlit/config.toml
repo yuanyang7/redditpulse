@@ -1,8 +1,8 @@
 [theme]
-# Arty, modern, light — saturated and confident, not washed out
+# Flat, arty, light — solid color blocks, no gradients/shadows
 base = "light"
-primaryColor = "#6D3BFF"            # deep electric violet
-backgroundColor = "#F6F3FF"         # tinted off-white (not stark white)
-secondaryBackgroundColor = "#E7DEFF" # saturated lavender panels
-textColor = "#181231"               # near-black ink for strong contrast
+primaryColor = "#FF4D6D"            # bold flat coral-red accent
+backgroundColor = "#FBF7F0"         # warm flat cream
+secondaryBackgroundColor = "#F3E9D8" # soft sand panels
+textColor = "#181818"               # flat ink
 font = "sans serif"
