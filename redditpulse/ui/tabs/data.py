@@ -39,6 +39,13 @@ def _runs_section(topic: str) -> None:
     } for r in runs])
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+    errored = [r for r in runs if r["status"] == "error" and r.get("error")]
+    if errored:
+        with st.expander(f"Error details ({len(errored)})"):
+            for r in errored:
+                st.markdown(f"**Run {r['id']}** ({r['started_at'][:16].replace('T', ' ')})")
+                st.code(r["error"], language=None)
+
     rc1, rc2 = st.columns([2, 1])
     with rc1:
         run_id = st.selectbox("Run to delete", [r["id"] for r in runs],

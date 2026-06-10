@@ -55,7 +55,7 @@ def search_comments(
     seen_ids: set[str] = set()
     comments: list[dict] = []
     queries = 0
-    timed_out = 0
+    failed = 0
     total_queries = len(keywords) * len(targets)
     stopped = False
 
@@ -70,8 +70,8 @@ def search_comments(
                 progress_callback(queries, total_queries, f"r/{subreddit} — \"{keyword}\"")
             queries += 1
             result = _search(subreddit, keyword, limit_per_keyword, time_range)
-            if result is None:  # query gave up after repeated timeouts
-                timed_out += 1
+            if result is None:  # query gave up after repeated timeouts/errors
+                failed += 1
                 continue
             for raw in result:
                 cid = raw.get("id")
@@ -95,11 +95,11 @@ def search_comments(
         progress_callback(total_queries if not stopped else queries, total_queries,
                           "Stopped" if stopped else "Done")
 
-    # If every query timed out, the archive is overloaded — say so instead of
-    # silently returning nothing.
-    if not stopped and queries and timed_out == queries:
+    # If every query failed (timeout or server error), the archive is likely
+    # overloaded — say so instead of silently returning nothing.
+    if not stopped and queries and failed == queries:
         raise FetchError(
-            "Arctic Shift timed out on every query — its server is likely "
+            "Arctic Shift failed on every query — its server is likely "
             "overloaded right now. Wait a minute and try again, or use fewer "
             "subreddits / a narrower time range."
         )
@@ -153,20 +153,24 @@ def _search(subreddit: str, keyword: str, limit: int, time_range: TimeRange,
             time.sleep(1.0)  # be polite between successful calls
             return resp.json().get("data", [])
 
-        # 422/429 with a "Timeout"/"slow down" message is transient — back off.
+        # 422/429 with a "Timeout"/"slow down" message, or any 5xx server
+        # error, is transient — back off and retry, then give up on just this
+        # query rather than failing the whole run.
         try:
             msg = (resp.json() or {}).get("error", "")
         except ValueError:
             msg = resp.text[:120]
-        transient = resp.status_code in (422, 429) and (
-            "timeout" in msg.lower() or "slow down" in msg.lower()
+        transient = resp.status_code >= 500 or (
+            resp.status_code in (422, 429) and (
+                "timeout" in msg.lower() or "slow down" in msg.lower()
+            )
         )
         if transient and attempt < max_retries - 1:
             time.sleep(delay)
             delay *= 2
             continue
         if transient:
-            return None  # gave up on this query after repeated timeouts
+            return None  # gave up on this query after repeated failures
 
         resp.raise_for_status()
         return resp.json().get("data", [])
