@@ -274,10 +274,11 @@ with st.sidebar:
         if not new_topic.strip():
             st.warning("Enter a topic first.")
         else:
-            with st.spinner(f"Searching Reddit for \"{new_topic}\"..."):
+            topic_to_use = core.next_available_topic_name(new_topic.strip(), topic_names)
+            with st.spinner(f"Searching Reddit for \"{topic_to_use}\"..."):
                 try:
                     result = core.search_topic(
-                        topic=new_topic.strip(),
+                        topic=topic_to_use,
                         subreddits=subreddits.split(",") if subreddits.strip() else None,
                         limit=limit,
                         time_filter=time_filter,
@@ -288,7 +289,7 @@ with st.sidebar:
                     )
                     _refresh_topics()
                     st.session_state.pop("keyword_review", None)
-                    st.session_state["pending_topic_select"] = new_topic.strip()
+                    st.session_state["pending_topic_select"] = topic_to_use
                     msg = (
                         f"Found {result['fetched']} comments, "
                         f"inserted {result['new_comments']} new "
@@ -296,6 +297,8 @@ with st.sidebar:
                     )
                     if "filtered_out" in result:
                         msg += f" — filtered out {result['filtered_out']} irrelevant"
+                    if topic_to_use != new_topic.strip():
+                        msg = f"Created '{topic_to_use}' — " + msg
                     st.success(msg)
                     st.rerun()
                 except Exception as e:

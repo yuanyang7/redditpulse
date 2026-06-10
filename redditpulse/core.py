@@ -1,6 +1,7 @@
 """Shared service layer — pure business logic used by both CLI and GUI."""
 
 import json
+import re
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
@@ -110,6 +111,29 @@ def search_topic(
     if min_relevance is not None:
         result["filtered_out"] = pre_filter_count - len(comments)
     return result
+
+
+def next_available_topic_name(name: str, existing_names: list[str]) -> str:
+    """If `name` is already taken, return a "<base> v{n}" variant that isn't.
+
+    Strips any existing " vN" suffix to find the base name, then picks the
+    next unused version number across all existing "<base> vN" names.
+    """
+    name = name.strip()
+    if name not in existing_names:
+        return name
+
+    match = re.match(r"^(.*) v(\d+)$", name)
+    base = match.group(1) if match else name
+
+    max_version = 1
+    pattern = re.compile(rf"^{re.escape(base)} v(\d+)$")
+    for existing in existing_names:
+        m = pattern.match(existing)
+        if m:
+            max_version = max(max_version, int(m.group(1)))
+
+    return f"{base} v{max_version + 1}"
 
 
 def duplicate_topic(source_topic: str, new_name: str) -> dict:
