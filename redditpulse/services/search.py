@@ -72,6 +72,14 @@ def search_topic(
             else:
                 keywords = topic_row["keywords"].split(",")
 
+            # If the caller didn't specify subreddits, reuse the ones from
+            # this topic's most recent fetch run instead of falling back to
+            # the fetcher's generic defaults.
+            if subreddits is None:
+                last_run = repo.get_last_fetch_run(conn, topic_id)
+                if last_run and last_run["subreddits"]:
+                    subreddits = last_run["subreddits"]
+
         run_id = repo.create_fetch_run(
             conn, topic_id,
             source=source,

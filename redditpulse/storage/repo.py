@@ -301,6 +301,19 @@ def finish_fetch_run(conn: sqlite3.Connection, run_id: int, status: str,
     conn.commit()
 
 
+def get_last_fetch_run(conn: sqlite3.Connection, topic_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM fetch_runs WHERE topic_id = ? ORDER BY started_at DESC LIMIT 1",
+        (topic_id,),
+    ).fetchone()
+    if not row:
+        return None
+    run = dict(row)
+    run["keywords"] = json.loads(run["keywords"]) if run["keywords"] else []
+    run["subreddits"] = json.loads(run["subreddits"]) if run["subreddits"] else None
+    return run
+
+
 def get_fetch_runs(conn: sqlite3.Connection, topic_id: int) -> list[dict]:
     rows = conn.execute(
         "SELECT * FROM fetch_runs WHERE topic_id = ? ORDER BY started_at DESC",

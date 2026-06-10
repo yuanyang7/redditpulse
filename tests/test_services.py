@@ -73,6 +73,22 @@ def test_search_merge_dedupes_across_sessions():
     assert len(services.list_fetch_runs("t")) == 2
 
 
+def test_search_refresh_inherits_subreddits_from_last_run():
+    _search([make_comment("a")], topic="t", subreddits=["technology", "privacy"])
+    result, fake = _search([make_comment("b")], topic="t", refresh=True)
+    assert result["new_comments"] == 1
+    assert fake.calls[0]["subreddits"] == ["technology", "privacy"]
+    runs = services.list_fetch_runs("t")
+    assert runs[0]["subreddits"] == ["technology", "privacy"]
+
+
+def test_search_refresh_explicit_subreddits_override_last_run():
+    _search([make_comment("a")], topic="t", subreddits=["technology"])
+    result, fake = _search([make_comment("b")], topic="t", refresh=True,
+                           subreddits=["worldnews"])
+    assert fake.calls[0]["subreddits"] == ["worldnews"]
+
+
 def test_search_explicit_date_range_recorded():
     result, fake = _search(
         [make_comment("a")], topic="ranged",
