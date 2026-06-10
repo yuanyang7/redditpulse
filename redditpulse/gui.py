@@ -378,36 +378,68 @@ with st.sidebar:
                         "text": ", ".join(keywords),
                         "subreddits_text": ", ".join(subreddits_sugg),
                     }
+                    st.session_state["search_keywords_text"] = ", ".join(keywords)
+                    st.session_state["search_subreddits_text"] = ", ".join(subreddits_sugg)
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
 
     keyword_override = None
-    suggested_subreddits = ""
     if review and review["topic"] == new_topic.strip():
-        edited = st.text_area(
-            "Keywords (review and edit before fetching)",
-            value=review["text"],
-            help="Comma-separated. Edit out anything outdated or irrelevant "
-                 "(e.g. drop a stale year) before fetching.",
-        )
+        kw_col, kw_btn_col = st.columns([5, 1])
+        with kw_col:
+            edited = st.text_area(
+                "Keywords (review and edit before fetching)",
+                key="search_keywords_text",
+                help="Comma-separated. Edit out anything outdated or irrelevant "
+                     "(e.g. drop a stale year) before fetching.",
+            )
+        with kw_btn_col:
+            st.markdown("<div style='height: 1.8em'></div>", unsafe_allow_html=True)
+            if st.button("🔄", key="regen_keywords", help="Regenerate keywords"):
+                with st.spinner("Regenerating keywords..."):
+                    try:
+                        keywords = core.generate_keywords(new_topic.strip())
+                        st.session_state["search_keywords_text"] = ", ".join(keywords)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
         keyword_override = [k.strip() for k in edited.split(",") if k.strip()]
-        suggested_subreddits = review.get("subreddits_text", "")
 
     col1, col2 = st.columns(2)
     with col1:
-        limit = st.number_input("Limit", min_value=1, max_value=100, value=30)
+        limit = st.number_input("Limit", min_value=1, max_value=100, value=50)
     with col2:
         time_filter = st.selectbox(
             "Time", ["month", "week", "day", "hour", "6months", "year", "all"],
+            index=4,
             format_func=lambda v: "6 months" if v == "6months" else v,
         )
 
-    subreddits = st.text_input(
-        "Subreddits", value=suggested_subreddits, placeholder="all (comma-separated)",
-        help="Comma-separated. Auto-filled from \"Generate Keywords\" with subreddits "
-             "suggested for this topic — edit as needed.",
-    )
+    if review and review["topic"] == new_topic.strip():
+        sr_col, sr_btn_col = st.columns([5, 1])
+        with sr_col:
+            subreddits = st.text_input(
+                "Subreddits", key="search_subreddits_text", placeholder="all (comma-separated)",
+                help="Comma-separated. Auto-filled from \"Generate Keywords\" with subreddits "
+                     "suggested for this topic — edit as needed.",
+            )
+        with sr_btn_col:
+            st.markdown("<div style='height: 1.8em'></div>", unsafe_allow_html=True)
+            if st.button("🔄", key="regen_subreddits", help="Regenerate subreddits"):
+                with st.spinner("Regenerating subreddits..."):
+                    try:
+                        subreddits_sugg = core.generate_subreddits(new_topic.strip())
+                        st.session_state["search_subreddits_text"] = ", ".join(subreddits_sugg)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+    else:
+        subreddits = st.text_input(
+            "Subreddits", placeholder="all (comma-separated)",
+            help="Comma-separated. Auto-filled from \"Generate Keywords\" with subreddits "
+                 "suggested for this topic — edit as needed.",
+        )
     use_public = st.checkbox(
         "Use public API (no credentials)", value=True,
         help="Fetches via the Arctic Shift archive — no credentials needed and "
