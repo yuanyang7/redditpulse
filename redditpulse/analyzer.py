@@ -49,7 +49,7 @@ def generate_keywords(topic: str) -> list[str]:
     """Use Claude to generate optimal Reddit search keywords for a topic."""
     client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-haiku-4-5-20251001",
         max_tokens=300,
         messages=[{
             "role": "user",
@@ -76,7 +76,7 @@ def analyze_themes(topic: str, comments: list[dict]) -> dict:
 
     client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-haiku-4-5-20251001",
         max_tokens=2000,
         messages=[{
             "role": "user",
@@ -98,6 +98,34 @@ def analyze_themes(topic: str, comments: list[dict]) -> dict:
     start = text.index("{")
     end = text.rindex("}") + 1
     return json.loads(text[start:end])
+
+
+def classify_sentiment_batch(texts: list[str], batch_size: int = 50) -> list[str]:
+    """Use Claude (Haiku) to classify each text as positive/negative/neutral."""
+    client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    labels = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        numbered = "\n".join(f"{j + 1}. {t[:500]}" for j, t in enumerate(batch))
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=batch_size * 15 + 100,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "Classify the sentiment of each numbered Reddit comment below as "
+                    "\"positive\", \"negative\", or \"neutral\".\n\n"
+                    f"{numbered}\n\n"
+                    "Return ONLY a JSON array of strings, one label per comment in order, "
+                    "no explanation. Example: [\"positive\", \"negative\", \"neutral\"]"
+                ),
+            }],
+        )
+        text = response.content[0].text.strip()
+        start = text.index("[")
+        end = text.rindex("]") + 1
+        labels.extend(json.loads(text[start:end]))
+    return labels
 
 
 def run_full_analysis(topic: str, comments: list[dict], skip_claude: bool = False) -> dict:

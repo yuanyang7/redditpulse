@@ -77,6 +77,14 @@ def get_all_topics(conn: sqlite3.Connection) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def delete_topic(conn: sqlite3.Connection, topic_id: int) -> None:
+    """Delete a topic and all its comments and analyses."""
+    conn.execute("DELETE FROM comments WHERE topic_id = ?", (topic_id,))
+    conn.execute("DELETE FROM analyses WHERE topic_id = ?", (topic_id,))
+    conn.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
+    conn.commit()
+
+
 def insert_comments(conn: sqlite3.Connection, topic_id: int, comments: list[dict]) -> int:
     """Insert comments, skipping duplicates. Returns number of new comments inserted."""
     inserted = 0

@@ -42,6 +42,12 @@ with st.sidebar:
     topics = st.session_state["topics"]
     topic_names = [t["name"] for t in topics]
 
+    # Apply any pending topic selection before the selectbox widget is
+    # instantiated (session_state for a widget key can't be set after that).
+    pending = st.session_state.pop("pending_topic_select", None)
+    if pending in topic_names:
+        st.session_state["topic_select"] = pending
+
     if topic_names:
         selected = st.selectbox("Select topic", topic_names, key="topic_select")
     else:
@@ -59,8 +65,12 @@ with st.sidebar:
         time_filter = st.selectbox("Time", ["month", "week", "day", "hour", "year", "all"])
 
     subreddits = st.text_input("Subreddits", placeholder="all (comma-separated)")
-    use_public = st.checkbox("Use public API (no credentials)", value=False)
-    min_relevance = st.slider("Min relevance (0 = off)", 0.0, 1.0, 0.0, 0.05,
+    use_public = st.checkbox(
+        "Use public API (no credentials)", value=True,
+        help="Fetches via Reddit's public RSS feeds — no credentials needed, but "
+             "comment scores are unavailable (shown as 0).",
+    )
+    min_relevance = st.slider("Min relevance (0 = off)", 0.0, 1.0, 0.3, 0.05,
                               help="Semantic similarity threshold. Try 0.3 to filter off-topic comments.")
 
     if st.button("🔍 Search", use_container_width=True, type="primary"):
@@ -79,7 +89,7 @@ with st.sidebar:
                         min_relevance=min_relevance if min_relevance > 0 else None,
                     )
                     _refresh_topics()
-                    st.session_state["topic_select"] = new_topic.strip()
+                    st.session_state["pending_topic_select"] = new_topic.strip()
                     msg = (
                         f"Found {result['fetched']} comments, "
                         f"inserted {result['new_comments']} new "
@@ -133,6 +143,51 @@ with st.sidebar:
                         st.rerun()
                     except Exception as e:
                         st.error(str(e))
+
+        st.markdown("---")
+        st.markdown("**New version of this topic**")
+        dup_name = st.text_input(
+            "New topic name", placeholder=f"{selected} v2", key="dup_name",
+            help="Creates a new topic with the same keywords and fetches fresh "
+                 "comments. The original topic is left untouched.",
+        )
+        if st.button("📑 Create & Fetch", use_container_width=True):
+            dup_name = dup_name.strip()
+            if not dup_name:
+                st.warning("Enter a name for the new version.")
+            elif dup_name == selected:
+                st.warning("Choose a different name than the original topic.")
+            else:
+                with st.spinner(f"Creating '{dup_name}' and fetching comments..."):
+                    try:
+                        core.duplicate_topic(selected, dup_name)
+                        result = core.search_topic(
+                            dup_name, refresh=True, public=use_public,
+                            min_relevance=min_relevance if min_relevance > 0 else None,
+                        )
+                        _refresh_topics()
+                        st.session_state["pending_topic_select"] = dup_name
+                        st.success(f"Created '{dup_name}' with {result['new_comments']} comments")
+                        st.rerun()
+                    except (core.TopicNotFoundError, core.DuplicateTopicError) as e:
+                        st.error(str(e))
+                    except Exception as e:
+                        st.error(str(e))
+
+        st.markdown("---")
+        with st.expander("⚠️ Danger zone"):
+            st.markdown(f"Permanently delete **{selected}**, including all its comments and analyses.")
+            confirm_delete = st.checkbox(f"I'm sure I want to delete '{selected}'", key="confirm_delete")
+            if st.button("🗑 Delete topic", use_container_width=True, disabled=not confirm_delete):
+                try:
+                    core.delete_topic(selected)
+                    _refresh_topics()
+                    st.session_state.pop("topic_select", None)
+                    st.session_state.pop("confirm_delete", None)
+                    st.success(f"Deleted '{selected}'")
+                    st.rerun()
+                except core.TopicNotFoundError as e:
+                    st.error(str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +463,7 @@ with tab_evaluate:
 
     ev1, ev2 = st.columns([2, 1])
     with ev1:
-        model_choice = st.selectbox("Model to evaluate", ["vader", "textblob"], key="eval_model")
+        model_choice = st.selectbox("Model to evaluate", ["vader", "textblob", "claude"], key="eval_model")
     with ev2:
         run_eval = st.button("▶ Run Evaluation", use_container_width=True, type="primary")
 

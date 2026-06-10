@@ -21,6 +21,10 @@ class NoAnalysisError(Exception):
     pass
 
 
+class DuplicateTopicError(Exception):
+    pass
+
+
 def search_topic(
     topic: str,
     subreddits: list[str] | None = None,
@@ -101,6 +105,29 @@ def search_topic(
     return result
 
 
+def duplicate_topic(source_topic: str, new_name: str) -> dict:
+    """Create a new topic that reuses an existing topic's keywords.
+
+    Lets you fetch a fresh "version" of a topic (new comments, new analyses)
+    under a different name, while leaving the original topic untouched.
+    Use search_topic(new_name, refresh=True) afterwards to fetch comments.
+    """
+    conn = db.get_connection()
+    db.init_db(conn)
+
+    source = db.get_topic(conn, source_topic)
+    if not source:
+        raise TopicNotFoundError(f"Topic '{source_topic}' not found.")
+
+    new_name = new_name.strip()
+    if db.get_topic(conn, new_name):
+        raise DuplicateTopicError(f"Topic '{new_name}' already exists.")
+
+    keywords = source["keywords"].split(",")
+    db.create_topic(conn, new_name, keywords)
+    return {"name": new_name, "keywords": keywords}
+
+
 def analyze_topic(
     topic: str,
     limit: int = 500,
@@ -134,6 +161,18 @@ def analyze_topic(
     )
 
     return result
+
+
+def delete_topic(topic: str) -> None:
+    """Delete a topic and all its comments and analyses."""
+    conn = db.get_connection()
+    db.init_db(conn)
+
+    topic_row = db.get_topic(conn, topic)
+    if not topic_row:
+        raise TopicNotFoundError(f"Topic '{topic}' not found.")
+
+    db.delete_topic(conn, topic_row["id"])
 
 
 def list_topics() -> list[dict]:
@@ -251,8 +290,10 @@ def evaluate_sentiment(topic: str, model: str = "vader") -> dict:
                 preds.append("negative")
             else:
                 preds.append("neutral")
+    elif model == "claude":
+        preds = analyzer.classify_sentiment_batch(texts)
     else:
-        raise ValueError(f"Unknown model '{model}'. Supported: vader, textblob")
+        raise ValueError(f"Unknown model '{model}'. Supported: vader, textblob, claude")
 
     labels_order = ["positive", "neutral", "negative"]
     correct = sum(g == p for g, p in zip(gt, preds))
