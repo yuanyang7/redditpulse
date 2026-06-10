@@ -64,6 +64,11 @@ h2, h3 {
     border: 2px solid var(--rp-ink);
     line-height: 1.3;
 }
+/* Streamlit nests heading text in a <span>; the global span color would
+   otherwise repaint it dark, so force white inside header blocks. */
+h2 span, h3 span { color: #FFFFFF !important; }
+/* Hide the hover anchor-link icon that appears next to headings */
+h2 a, h3 a { display: none !important; }
 
 /* Sidebar — flat solid color block with hard edge */
 [data-testid="stSidebar"] {
