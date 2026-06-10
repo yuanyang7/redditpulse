@@ -1,0 +1,8 @@
+[theme]
+# Arty, modern, light — saturated and confident, not washed out
+base = "light"
+primaryColor = "#6D3BFF"            # deep electric violet
+backgroundColor = "#F6F3FF"         # tinted off-white (not stark white)
+secondaryBackgroundColor = "#E7DEFF" # saturated lavender panels
+textColor = "#181231"               # near-black ink for strong contrast
+font = "sans serif"

@@ -24,6 +24,133 @@ st.set_page_config(page_title="RedditPulse", page_icon="📊", layout="wide")
 
 
 # ---------------------------------------------------------------------------
+# Theme — arty, modern, light look (custom CSS on top of the Streamlit theme)
+# ---------------------------------------------------------------------------
+_THEME_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+    --rp-violet: #6D3BFF;
+    --rp-coral:  #FF4D8D;
+    --rp-amber:  #FFB020;
+    --rp-mint:   #14C9B0;
+    --rp-ink:    #181231;
+}
+
+/* App canvas — vivid, art-poster gradient wash */
+.stApp {
+    background:
+        radial-gradient(900px 520px at 8% -6%, rgba(109, 59, 255, 0.28), transparent 55%),
+        radial-gradient(820px 460px at 104% 4%, rgba(255, 77, 141, 0.24), transparent 52%),
+        radial-gradient(700px 520px at 60% 110%, rgba(20, 201, 176, 0.18), transparent 55%),
+        #F1ECFF;
+}
+
+/* Body & headings typography */
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+.stApp, .stMarkdown, p, span, label, li { color: var(--rp-ink); }
+h1, h2, h3, h4 {
+    font-family: 'Space Grotesk', sans-serif !important;
+    letter-spacing: -0.02em;
+    color: var(--rp-ink);
+    font-weight: 700 !important;
+}
+
+/* Gradient app title — bold poster headline */
+h1 {
+    background: linear-gradient(95deg, var(--rp-violet) 0%, var(--rp-coral) 55%, var(--rp-amber) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 2.6rem !important;
+}
+/* Accent underline beneath section headers */
+h2, h3 {
+    border-bottom: 3px solid;
+    border-image: linear-gradient(95deg, var(--rp-violet), var(--rp-coral)) 1;
+    padding-bottom: 0.25rem;
+    display: inline-block;
+}
+
+/* Main content padding so cards breathe */
+.block-container { padding-top: 2.5rem; }
+
+/* Sidebar — bold colored panel, not pale */
+[data-testid="stSidebar"] {
+    background: linear-gradient(170deg, #2A1B5E 0%, #4B2C9E 55%, #7A2E7E 100%);
+    border-right: none;
+}
+[data-testid="stSidebar"] * { color: #F3EEFF !important; }
+[data-testid="stSidebar"] h1 {
+    font-size: 1.7rem;
+    -webkit-text-fill-color: #FFFFFF;
+}
+[data-testid="stSidebar"] .stTextInput input,
+[data-testid="stSidebar"] .stNumberInput input,
+[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div {
+    background: rgba(255, 255, 255, 0.12) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    color: #FFFFFF !important;
+}
+
+/* Buttons — rounded, gradient, lift on hover */
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+    border-radius: 12px;
+    border: none;
+    font-weight: 700;
+    background: linear-gradient(95deg, var(--rp-violet), var(--rp-coral));
+    color: white;
+    padding: 0.55rem 1.2rem;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    box-shadow: 0 6px 18px rgba(109, 59, 255, 0.35);
+}
+.stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 26px rgba(255, 77, 141, 0.45);
+    color: white;
+}
+
+/* Inputs — clean rounded fields with defined edges */
+.stTextInput input, .stNumberInput input, .stTextArea textarea,
+.stSelectbox [data-baseweb="select"] > div {
+    border-radius: 10px !important;
+    border: 1.5px solid rgba(109, 59, 255, 0.25) !important;
+    background: #FFFFFF !important;
+}
+
+/* Tabs — pill style with filled active state */
+.stTabs [data-baseweb="tab-list"] { gap: 8px; }
+.stTabs [data-baseweb="tab"] {
+    border-radius: 12px;
+    padding: 8px 18px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.55);
+}
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(95deg, var(--rp-violet), var(--rp-coral));
+    color: #FFFFFF !important;
+}
+.stTabs [aria-selected="true"] * { color: #FFFFFF !important; }
+
+/* Metrics, dataframes & expanders — crisp white cards with depth */
+[data-testid="stMetric"], .stDataFrame, [data-testid="stExpander"] {
+    background: #FFFFFF;
+    border: 1.5px solid rgba(109, 59, 255, 0.18);
+    border-radius: 18px;
+    padding: 0.7rem 1rem;
+    box-shadow: 0 10px 30px rgba(24, 18, 49, 0.10);
+}
+[data-testid="stMetricValue"] { color: var(--rp-violet); font-weight: 700; }
+
+/* Dividers */
+hr { border-color: rgba(109, 59, 255, 0.25); }
+</style>
+"""
+st.markdown(_THEME_CSS, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
 # Sidebar — topic selection & search controls
 # ---------------------------------------------------------------------------
 def _refresh_topics():
