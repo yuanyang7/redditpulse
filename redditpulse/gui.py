@@ -377,20 +377,22 @@ with st.sidebar:
                         "topic": new_topic.strip(),
                         "text": ", ".join(keywords),
                         "subreddits_text": ", ".join(subreddits_sugg),
+                        "kw_version": 0,
+                        "sr_version": 0,
                     }
-                    st.session_state["search_keywords_text"] = ", ".join(keywords)
-                    st.session_state["search_subreddits_text"] = ", ".join(subreddits_sugg)
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
 
     keyword_override = None
     if review and review["topic"] == new_topic.strip():
+        kw_version = review.get("kw_version", 0)
         kw_col, kw_btn_col = st.columns([5, 1])
         with kw_col:
             edited = st.text_area(
                 "Keywords (review and edit before fetching)",
-                key="search_keywords_text",
+                value=review["text"],
+                key=f"search_keywords_text_{kw_version}",
                 help="Comma-separated. Edit out anything outdated or irrelevant "
                      "(e.g. drop a stale year) before fetching.",
             )
@@ -400,7 +402,8 @@ with st.sidebar:
                 with st.spinner("Regenerating keywords..."):
                     try:
                         keywords = core.generate_keywords(new_topic.strip())
-                        st.session_state["search_keywords_text"] = ", ".join(keywords)
+                        review["text"] = ", ".join(keywords)
+                        review["kw_version"] = kw_version + 1
                         st.rerun()
                     except Exception as e:
                         st.error(str(e))
@@ -417,10 +420,12 @@ with st.sidebar:
         )
 
     if review and review["topic"] == new_topic.strip():
+        sr_version = review.get("sr_version", 0)
         sr_col, sr_btn_col = st.columns([5, 1])
         with sr_col:
             subreddits = st.text_input(
-                "Subreddits", key="search_subreddits_text", placeholder="all (comma-separated)",
+                "Subreddits", value=review.get("subreddits_text", ""),
+                key=f"search_subreddits_text_{sr_version}", placeholder="all (comma-separated)",
                 help="Comma-separated. Auto-filled from \"Generate Keywords\" with subreddits "
                      "suggested for this topic — edit as needed.",
             )
@@ -430,7 +435,8 @@ with st.sidebar:
                 with st.spinner("Regenerating subreddits..."):
                     try:
                         subreddits_sugg = core.generate_subreddits(new_topic.strip())
-                        st.session_state["search_subreddits_text"] = ", ".join(subreddits_sugg)
+                        review["subreddits_text"] = ", ".join(subreddits_sugg)
+                        review["sr_version"] = sr_version + 1
                         st.rerun()
                     except Exception as e:
                         st.error(str(e))
