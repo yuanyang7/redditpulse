@@ -200,6 +200,15 @@ def _emotions_chart(df: pd.DataFrame) -> alt.Chart:
     )
 
 
+def _breakdown_chart(df: pd.DataFrame, dimension: str) -> alt.Chart:
+    """Build a horizontal bar chart of a topic's category breakdown by percentage."""
+    return alt.Chart(df).mark_bar(color="#7C5CFF").encode(
+        x=alt.X("percentage:Q", title="%"),
+        y=alt.Y("category:N", title="", sort="-x"),
+        tooltip=["category", "percentage"],
+    ).properties(title=dimension)
+
+
 def _run_search(label: str, **kwargs):
     """Run core.search_topic inside a live status box showing query progress."""
     with st.status(label, expanded=True) as status:
@@ -463,6 +472,16 @@ with tab_dash:
                         st.altair_chart(_emotions_chart(df), use_container_width=True)
                     st.dataframe(df, use_container_width=True, hide_index=True)
 
+            breakdown = themes.get("subtopic_breakdown")
+            if breakdown and breakdown.get("categories"):
+                dimension = breakdown.get("dimension", "Breakdown")
+                st.subheader(dimension)
+                df = pd.DataFrame(breakdown["categories"])
+                if not df.empty:
+                    if "percentage" in df.columns:
+                        st.altair_chart(_breakdown_chart(df, dimension), use_container_width=True)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+
             if "key_insights" in themes:
                 st.subheader("Key Insights")
                 for insight in themes["key_insights"]:
@@ -655,6 +674,17 @@ with tab_analyze:
             if not df.empty:
                 if "prevalence" in df.columns:
                     st.altair_chart(_emotions_chart(df), use_container_width=True)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+        # Subtopic breakdown (e.g. genres for a "music" topic, brands for a phone topic)
+        breakdown = themes.get("subtopic_breakdown")
+        if breakdown and breakdown.get("categories"):
+            dimension = breakdown.get("dimension", "Breakdown")
+            st.subheader(dimension)
+            df = pd.DataFrame(breakdown["categories"])
+            if not df.empty:
+                if "percentage" in df.columns:
+                    st.altair_chart(_breakdown_chart(df, dimension), use_container_width=True)
                 st.dataframe(df, use_container_width=True, hide_index=True)
 
         # Opinions

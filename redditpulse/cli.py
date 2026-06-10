@@ -176,6 +176,16 @@ def _display_results(topic: str, result: dict):
             table.add_row(o["stance"], o.get("strength", "?"), str(o.get("prevalence", "?")))
         console.print(table)
 
+    breakdown = themes.get("subtopic_breakdown")
+    if breakdown and breakdown.get("categories"):
+        dimension = breakdown.get("dimension", "Breakdown")
+        table = Table(title=dimension)
+        table.add_column(dimension, style="bold")
+        table.add_column("%", justify="right")
+        for c in breakdown["categories"]:
+            table.add_row(c["category"], str(c.get("percentage", "?")))
+        console.print(table)
+
     if "controversy_level" in themes:
         level = themes["controversy_level"]
         if isinstance(level, dict):
