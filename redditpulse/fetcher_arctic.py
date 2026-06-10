@@ -19,10 +19,10 @@ BASE = "https://arctic-shift.photon-reddit.com"
 HEADERS = {"User-Agent": "redditpulse/0.1 (personal research tool)"}
 
 # Used when the caller doesn't specify subreddits — broad, discussion-heavy
-# subreddits where most topics get talked about.
+# subreddits where most topics get talked about. Kept short because each
+# subreddit x keyword pair is a separate (expensive) full-text search.
 DEFAULT_SUBREDDITS = [
-    "technology", "privacy", "artificial", "MachineLearning", "Futurology",
-    "technews", "science", "news", "worldnews", "AskReddit",
+    "technology", "privacy", "artificial", "Futurology", "AskReddit",
 ]
 
 # Map the GUI's time_filter values to a lookback window for the `after` param.
@@ -78,8 +78,15 @@ def search_comments(
     return comments
 
 
-def _search(subreddit: str, keyword: str, limit: int, after: str | None) -> list[dict]:
-    """Run one comment body search; returns raw Arctic Shift comment dicts."""
+def _search(subreddit: str, keyword: str, limit: int, after: str | None,
+            max_retries: int = 3) -> list[dict]:
+    """Run one comment body search; returns raw Arctic Shift comment dicts.
+
+    Arctic Shift intermittently times out on body searches, replying with a
+    422 + "Timeout" message. Those are transient, so we retry with backoff.
+    Genuine search timeouts that never succeed are skipped (return []) rather
+    than failing the whole fetch.
+    """
     params = {
         "subreddit": subreddit,
         "body": keyword,
@@ -89,20 +96,37 @@ def _search(subreddit: str, keyword: str, limit: int, after: str | None) -> list
     if after:
         params["after"] = after
 
-    try:
-        resp = requests.get(f"{BASE}/api/comments/search", headers=HEADERS,
-                            params=params, timeout=20)
-        if resp.status_code == 429:
-            raise RuntimeError(
-                "Arctic Shift is rate-limiting requests (HTTP 429). "
-                "Wait a moment and try again, or reduce the number of subreddits."
-            )
+    delay = 2.0
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(f"{BASE}/api/comments/search", headers=HEADERS,
+                                params=params, timeout=30)
+        except requests.RequestException as e:
+            raise RuntimeError(f"Arctic Shift request failed: {e}") from e
+
+        if resp.status_code == 200:
+            time.sleep(1.0)  # be polite between successful calls
+            return resp.json().get("data", [])
+
+        # 422/429 with a "Timeout"/"slow down" message is transient — back off.
+        msg = ""
+        try:
+            msg = (resp.json() or {}).get("error", "")
+        except ValueError:
+            msg = resp.text[:120]
+        transient = resp.status_code in (422, 429) and (
+            "timeout" in msg.lower() or "slow down" in msg.lower()
+        )
+        if transient and attempt < max_retries - 1:
+            time.sleep(delay)
+            delay *= 2
+            continue
+        if transient:
+            return []  # gave up on this one query; skip rather than fail all
+
         resp.raise_for_status()
         return resp.json().get("data", [])
-    except requests.RequestException as e:
-        raise RuntimeError(f"Arctic Shift request failed: {e}") from e
-    finally:
-        time.sleep(0.3)  # be polite
+    return []
 
 
 def _after_param(time_filter: str) -> str | None:
