@@ -83,8 +83,8 @@ h2, h3 {
 /* Buttons — flat solid blocks, hard border, no shadow/gradient.
    !important + sidebar-scoped overrides so every button is identical and the
    sidebar's global text-color rule can't repaint the label. */
-.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button,
-[data-testid="stSidebar"] .stButton > button {
+.stButton  button, .stDownloadButton  button, .stFormSubmitButton  button,
+[data-testid="stSidebar"] .stButton  button {
     border-radius: 0 !important;
     border: 2px solid var(--rp-ink) !important;
     font-family: 'Space Grotesk', sans-serif !important;
@@ -103,16 +103,16 @@ h2, h3 {
     text-align: center;
 }
 /* Label text: centered, no stray margins, always white */
-.stButton > button p, .stDownloadButton > button p, .stFormSubmitButton > button p,
-[data-testid="stSidebar"] .stButton > button p {
+.stButton  button p, .stDownloadButton  button p, .stFormSubmitButton  button p,
+[data-testid="stSidebar"] .stButton  button p {
     margin: 0 !important;
     color: #FFFFFF !important;
 }
 /* Consistent hover/focus/active — darker coral, never black */
-.stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover,
-.stButton > button:focus, .stButton > button:active,
-[data-testid="stSidebar"] .stButton > button:hover,
-[data-testid="stSidebar"] .stButton > button:focus {
+.stButton  button:hover, .stDownloadButton  button:hover, .stFormSubmitButton  button:hover,
+.stButton  button:focus, .stButton  button:active,
+[data-testid="stSidebar"] .stButton  button:hover,
+[data-testid="stSidebar"] .stButton  button:focus {
     background: var(--rp-coral-dark) !important;
     color: #FFFFFF !important;
     border-color: var(--rp-ink) !important;
