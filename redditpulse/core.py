@@ -28,6 +28,11 @@ def generate_keywords(topic: str) -> list[str]:
     return analyzer.generate_keywords(topic)
 
 
+def generate_subreddits(topic: str) -> list[str]:
+    """Generate suggested subreddits to search for a topic (for review before fetching)."""
+    return analyzer.generate_subreddits(topic)
+
+
 def search_topic(
     topic: str,
     subreddits: list[str] | None = None,

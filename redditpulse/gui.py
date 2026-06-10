@@ -260,24 +260,27 @@ with st.sidebar:
     st.markdown("### New Search")
     new_topic = st.text_input("Topic", placeholder="e.g. AI and privacy")
 
-    # ------ Keyword generation & review ------
+    # ------ Keyword & subreddit generation & review ------
     review = st.session_state.get("keyword_review")
     if st.button("Generate Keywords", use_container_width=True):
         if not new_topic.strip():
             st.warning("Enter a topic first.")
         else:
-            with st.spinner("Generating keywords..."):
+            with st.spinner("Generating keywords and subreddits..."):
                 try:
                     keywords = core.generate_keywords(new_topic.strip())
+                    subreddits_sugg = core.generate_subreddits(new_topic.strip())
                     st.session_state["keyword_review"] = {
                         "topic": new_topic.strip(),
                         "text": ", ".join(keywords),
+                        "subreddits_text": ", ".join(subreddits_sugg),
                     }
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
 
     keyword_override = None
+    suggested_subreddits = ""
     if review and review["topic"] == new_topic.strip():
         edited = st.text_area(
             "Keywords (review and edit before fetching)",
@@ -286,6 +289,7 @@ with st.sidebar:
                  "(e.g. drop a stale year) before fetching.",
         )
         keyword_override = [k.strip() for k in edited.split(",") if k.strip()]
+        suggested_subreddits = review.get("subreddits_text", "")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -296,7 +300,11 @@ with st.sidebar:
             format_func=lambda v: "6 months" if v == "6months" else v,
         )
 
-    subreddits = st.text_input("Subreddits", placeholder="all (comma-separated)")
+    subreddits = st.text_input(
+        "Subreddits", value=suggested_subreddits, placeholder="all (comma-separated)",
+        help="Comma-separated. Auto-filled from \"Generate Keywords\" with subreddits "
+             "suggested for this topic — edit as needed.",
+    )
     use_public = st.checkbox(
         "Use public API (no credentials)", value=True,
         help="Fetches via the Arctic Shift archive — no credentials needed and "

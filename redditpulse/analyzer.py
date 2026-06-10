@@ -102,6 +102,31 @@ def generate_keywords(topic: str) -> list[str]:
     return json.loads(text[start:end])
 
 
+def generate_subreddits(topic: str) -> list[str]:
+    """Use Claude to suggest relevant subreddits to search for a topic."""
+    client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        messages=[{
+            "role": "user",
+            "content": (
+                f"Suggest 5-8 active subreddits where people would discuss the topic: "
+                f"\"{topic}\"\n\n"
+                "Prefer subreddits dedicated to or closely related to the topic over "
+                "broad general-discussion subreddits, but include a couple of broad "
+                "ones (e.g. AskReddit) if they'd plausibly carry relevant discussion too.\n\n"
+                "Return ONLY a JSON array of subreddit names without the \"r/\" prefix, "
+                "no explanation. Example: [\"technology\", \"privacy\"]"
+            ),
+        }],
+    )
+    text = response.content[0].text.strip()
+    start = text.index("[")
+    end = text.rindex("]") + 1
+    return json.loads(text[start:end])
+
+
 def analyze_themes(topic: str, comments: list[dict]) -> dict:
     """Use Claude to extract themes, ranked opinions, and key insights from comments."""
     # Sample comments to stay within token limits
