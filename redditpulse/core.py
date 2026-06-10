@@ -22,10 +22,6 @@ class NoAnalysisError(Exception):
     pass
 
 
-class DuplicateTopicError(Exception):
-    pass
-
-
 def generate_keywords(topic: str) -> list[str]:
     """Generate suggested Reddit search keywords for a topic (for review before fetching)."""
     return analyzer.generate_keywords(topic)
@@ -134,29 +130,6 @@ def next_available_topic_name(name: str, existing_names: list[str]) -> str:
             max_version = max(max_version, int(m.group(1)))
 
     return f"{base} v{max_version + 1}"
-
-
-def duplicate_topic(source_topic: str, new_name: str) -> dict:
-    """Create a new topic that reuses an existing topic's keywords.
-
-    Lets you fetch a fresh "version" of a topic (new comments, new analyses)
-    under a different name, while leaving the original topic untouched.
-    Use search_topic(new_name, refresh=True) afterwards to fetch comments.
-    """
-    conn = db.get_connection()
-    db.init_db(conn)
-
-    source = db.get_topic(conn, source_topic)
-    if not source:
-        raise TopicNotFoundError(f"Topic '{source_topic}' not found.")
-
-    new_name = new_name.strip()
-    if db.get_topic(conn, new_name):
-        raise DuplicateTopicError(f"Topic '{new_name}' already exists.")
-
-    keywords = source["keywords"].split(",")
-    db.create_topic(conn, new_name, keywords)
-    return {"name": new_name, "keywords": keywords}
 
 
 def analyze_topic(

@@ -343,36 +343,6 @@ with st.sidebar:
                     st.error(str(e))
 
         st.markdown("---")
-        st.markdown("**New version of this topic**")
-        dup_name = st.text_input(
-            "New topic name", placeholder=f"{selected} v2", key="dup_name",
-            help="Creates a new topic with the same keywords and fetches fresh "
-                 "comments. The original topic is left untouched.",
-        )
-        if st.button("Create & Fetch", use_container_width=True):
-            dup_name = dup_name.strip()
-            if not dup_name:
-                st.warning("Enter a name for the new version.")
-            elif dup_name == selected:
-                st.warning("Choose a different name than the original topic.")
-            else:
-                with st.spinner(f"Creating '{dup_name}' and fetching comments..."):
-                    try:
-                        core.duplicate_topic(selected, dup_name)
-                        result = core.search_topic(
-                            dup_name, refresh=True, public=use_public,
-                            min_relevance=min_relevance if min_relevance > 0 else None,
-                        )
-                        _refresh_topics()
-                        st.session_state["pending_topic_select"] = dup_name
-                        st.success(f"Created '{dup_name}' with {result['new_comments']} comments")
-                        st.rerun()
-                    except (core.TopicNotFoundError, core.DuplicateTopicError) as e:
-                        st.error(str(e))
-                    except Exception as e:
-                        st.error(str(e))
-
-        st.markdown("---")
         with st.expander("⚠️ Danger zone"):
             st.markdown(f"Permanently delete **{selected}**, including all its comments and analyses.")
             confirm_delete = st.checkbox(f"I'm sure I want to delete '{selected}'", key="confirm_delete")
