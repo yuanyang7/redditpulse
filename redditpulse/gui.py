@@ -6,6 +6,7 @@ import sys
 
 import streamlit as st
 import pandas as pd
+import altair as alt
 
 try:
     from . import core
@@ -413,6 +414,13 @@ with tab_dash:
                 st.subheader("Top Themes")
                 df = pd.DataFrame(themes["themes"][:10])
                 if not df.empty:
+                    if "count" in df.columns:
+                        chart = alt.Chart(df).mark_bar(color="#2D5BFF").encode(
+                            x=alt.X("count:Q", title="Mentions"),
+                            y=alt.Y("theme:N", title="", sort="-x"),
+                            tooltip=["theme", "count", "summary"],
+                        )
+                        st.altair_chart(chart, use_container_width=True)
                     st.dataframe(df, use_container_width=True, hide_index=True)
 
             if "key_insights" in themes:
@@ -473,17 +481,51 @@ with tab_trends:
         if trends["source"] == "vader":
             st.caption("No saved analysis yet — using VADER. Run the Analyze tab for Claude-based sentiment here.")
 
-        # Sentiment line: % positive vs % negative across buckets.
-        line_df = df.set_index("period")[["pct_positive", "pct_negative"]].rename(
-            columns={"pct_positive": "% Positive", "pct_negative": "% Negative"}
-        )
-        st.markdown("**Sentiment (% of comments per bucket)**")
-        st.line_chart(line_df, color=["#1FB6A6", "#FF4D6D"])
+        if trends["bucket"] == "month":
+            # Use Altair with an ordinal axis so every month gets its own tick.
+            period_order = df["period"].tolist()
+            x_enc = alt.X(
+                "period:O", title="Month", sort=period_order,
+                axis=alt.Axis(labelAngle=-45, labelOverlap=False),
+            )
 
-        # Volume underneath so sparse buckets are obvious at a glance.
-        st.markdown("**Comment volume per bucket**")
-        st.bar_chart(df.set_index("period")[["count"]].rename(columns={"count": "Comments"}),
-                     color="#2D5BFF")
+            sentiment_long = df.melt(
+                id_vars=["period"], value_vars=["pct_positive", "pct_negative"],
+                var_name="Sentiment", value_name="Percent",
+            )
+            sentiment_long["Sentiment"] = sentiment_long["Sentiment"].map(
+                {"pct_positive": "% Positive", "pct_negative": "% Negative"}
+            )
+            line = alt.Chart(sentiment_long).mark_line(point=True).encode(
+                x=x_enc,
+                y=alt.Y("Percent:Q", title="% of comments"),
+                color=alt.Color(
+                    "Sentiment:N", title="",
+                    scale=alt.Scale(domain=["% Positive", "% Negative"], range=["#1FB6A6", "#FF4D6D"]),
+                ),
+            )
+            st.markdown("**Sentiment (% of comments per bucket)**")
+            st.altair_chart(line, use_container_width=True)
+
+            bar = alt.Chart(df).mark_bar(color="#2D5BFF").encode(
+                x=x_enc,
+                y=alt.Y("count:Q", title="Comments"),
+                tooltip=["period", "count"],
+            )
+            st.markdown("**Comment volume per bucket**")
+            st.altair_chart(bar, use_container_width=True)
+        else:
+            # Sentiment line: % positive vs % negative across buckets.
+            line_df = df.set_index("period")[["pct_positive", "pct_negative"]].rename(
+                columns={"pct_positive": "% Positive", "pct_negative": "% Negative"}
+            )
+            st.markdown("**Sentiment (% of comments per bucket)**")
+            st.line_chart(line_df, color=["#1FB6A6", "#FF4D6D"])
+
+            # Volume underneath so sparse buckets are obvious at a glance.
+            st.markdown("**Comment volume per bucket**")
+            st.bar_chart(df.set_index("period")[["count"]].rename(columns={"count": "Comments"}),
+                         color="#2D5BFF")
 
         sparse = [p for p in pts if p["sparse"]]
         if sparse:
