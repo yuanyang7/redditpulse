@@ -28,7 +28,7 @@ st.set_page_config(page_title="RedditPulse", page_icon="📊", layout="wide")
 # ---------------------------------------------------------------------------
 _THEME_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 :root {
     --rp-coral: #FF4D6D;   /* accent */
@@ -46,7 +46,7 @@ _THEME_CSS = """
 .block-container { padding-top: 2.5rem; }
 
 /* Typography */
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+html, body, [class*="css"] { font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace; }
 .stApp, .stMarkdown, p, span, label, li { color: var(--rp-ink); }
 h1, h2, h3, h4 {
     font-family: 'Space Grotesk', sans-serif !important;
