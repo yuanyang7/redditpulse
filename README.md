@@ -1,6 +1,11 @@
 # RedditPulse
 
-Fetch and analyze Reddit comments on any topic. Auto-generates search keywords, collects comments, runs sentiment analysis (VADER), and extracts themes/opinions/emotions via Claude API.
+Fetch and analyze Reddit comments on any topic. Auto-generates search keywords,
+collects comments (with full per-session tracking), runs sentiment analysis
+(VADER locally or Claude), extracts themes/opinions/emotions via the Claude
+API, and publishes selected results as a static showcase site.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how the codebase is organized.
 
 ## Setup
 
@@ -9,95 +14,134 @@ Fetch and analyze Reddit comments on any topic. Auto-generates search keywords, 
 python3.12 -m venv .venv
 source .venv/bin/activate
 
-# 2. Install
-pip install -e .
+# 2. Install (add [dev] for the test suite)
+pip install -e ".[dev]"
 
 # 3. Configure credentials
 cp .env.example .env
-# Edit .env with your Reddit API + Anthropic API keys
+# Edit .env with your Anthropic API key (and optionally Reddit API keys)
 ```
 
 ### Getting API Keys
 
-**Reddit**: Go to https://www.reddit.com/prefs/apps → create a "script" app → copy client ID and secret. Note: Reddit requires developer registration approval, which may take a few days.
+**Anthropic** (required for keyword generation and theme analysis): go to
+https://console.anthropic.com → create an API key.
 
-**Anthropic**: Go to https://console.anthropic.com → create an API key.
+**Reddit** (optional — only for the `praw` source): go to
+https://www.reddit.com/prefs/apps → create a "script" app → copy client ID and
+secret. The default `arctic` source (Arctic Shift archive) needs no
+credentials.
 
-## Usage
+## GUI
+
+```bash
+redditpulse-gui
+```
+
+Tabs: **Dashboard** (overview + latest analysis), **Trends** (sentiment over
+time), **Analyze** (run analyses; min-upvote filter; cached results reused
+automatically), **Browse**, **Data** (fetch-run history, data-quality report,
+trim), **Label**/**Evaluate** (ground-truth labeling and model benchmarking),
+**Showcase** (configure + build the static site), **Export**.
+
+## CLI
 
 ### Search (fetch comments)
 
 ```bash
-# Search for a topic — auto-generates keywords via Claude, fetches comments
-.venv/bin/redditpulse search "AI and privacy"
+# Search a topic — auto-generates keywords via Claude, fetches comments
+redditpulse search "AI and privacy"
 
-# Use public JSON API instead of PRAW (no Reddit credentials needed)
-.venv/bin/redditpulse search "AI and privacy" --public
+# Specific subreddits, relative window
+redditpulse search "AI and privacy" -s technology,privacy -t week
 
-# Search in specific subreddits
-.venv/bin/redditpulse search "AI and privacy" -s technology,privacy -t week
+# A specific timeline instead of "the past N days"
+redditpulse search "AI and privacy" --after 2025-01-01 --before 2025-03-31 --refresh
 
-# Fetch more comments for an existing topic
-.venv/bin/redditpulse search "AI and privacy" --refresh
+# Choose the data source: arctic (default, no credentials), praw, rss
+redditpulse search "AI and privacy" --source praw
 
-# Clear old comments and re-fetch fresh ones (keeps keywords, clears analyses too)
-.venv/bin/redditpulse search "AI and privacy" --reset-comments
+# Fetch more comments for an existing topic (merged + deduplicated)
+redditpulse search "AI and privacy" --refresh
+
+# Clear old comments and re-fetch fresh ones
+redditpulse search "AI and privacy" --reset-comments
+
+# Filter off-topic comments by semantic relevance
+redditpulse search "AI and privacy" --min-relevance 0.3
 ```
 
-**Time filter options** (`-t`): `hour`, `day`, `week`, `month`, `year`, `all`
+Time filter options (`-t`): `hour`, `day`, `week`, `month`, `6months`,
+`year`, `all` — or use `--after`/`--before` ISO dates for an exact range.
+
+Every fetch is recorded as a *run* with its full parameters; overlapping
+fetches merge automatically (deduplicated per topic by Reddit id).
 
 ### Analyze
 
 ```bash
-# Full analysis — VADER sentiment + Claude themes/opinions/insights
-.venv/bin/redditpulse analyze "AI and privacy"
+# Full analysis — sentiment + Claude themes/opinions/insights
+redditpulse analyze "AI and privacy"
+
+# Claude-based sentiment (better at sarcasm), only well-upvoted comments
+redditpulse analyze "AI and privacy" -m claude --min-score 5
 
 # Sentiment only — free, no Claude API call
-.venv/bin/redditpulse analyze "AI and privacy" --sentiment-only
-
-# Clear old analyses before running
-.venv/bin/redditpulse analyze "AI and privacy" --reset-analyses
+redditpulse analyze "AI and privacy" --sentiment-only
 ```
 
-### Export
+Results include an **upvote-weighted** sentiment breakdown (each comment
+weighted by its score). Re-running an identical analysis (same comments, same
+settings) returns the saved result with **no API calls**.
+
+### Data management
 
 ```bash
-# Export last saved analysis to JSON without re-running Claude
-.venv/bin/redditpulse export "AI and privacy" -o results.json
+redditpulse runs "AI and privacy"        # fetch-run history with parameters
+redditpulse validate "AI and privacy"    # data-quality report
+redditpulse trim "AI and privacy" --delete-before 2024-06-01 --min-score 1
 ```
 
-### Browse
+### Browse / Export / Topics
 
 ```bash
-# Browse comments by sentiment (default: negative)
-.venv/bin/redditpulse browse "AI and privacy" --sentiment negative
-.venv/bin/redditpulse browse "AI and privacy" --sentiment positive
-.venv/bin/redditpulse browse "AI and privacy" --sentiment neutral
-
-# Limit how many comments to show
-.venv/bin/redditpulse browse "AI and privacy" --sentiment negative --limit 10
+redditpulse browse "AI and privacy" --sentiment negative --min-score 3
+redditpulse export "AI and privacy" -o results.json
+redditpulse topics
 ```
 
-### Topics
+## Showcase site (GitHub Pages)
+
+Build a fully static site from saved analyses (no API calls):
 
 ```bash
-# List all tracked topics with comment counts
-.venv/bin/redditpulse topics
+redditpulse showcase            # writes docs/
 ```
 
-## Output
+Per-topic pages show sentiment (incl. upvote-weighted), trends, themes,
+emotions, subtopic breakdowns, opinions, insights and top comments — each
+section toggleable, orderable and annotatable per topic from the GUI's
+**Showcase** tab (or `services.set_showcase_config`).
 
-Full analysis produces:
-- **Sentiment breakdown** — positive/neutral/negative counts + average VADER score
-- **Top themes** — ranked by prevalence with summaries
-- **Emotions** — ranked emotional tones in the discussion
-- **Key opinions** — stances with strength ratings
-- **Controversy level** — how divisive the topic is
-- **Key insights** — 3-5 main takeaways
+To publish: commit `docs/` and enable GitHub Pages (Settings → Pages → deploy
+from branch → `/docs` folder).
+
+## Development
+
+```bash
+pytest                  # run the test suite (network and LLM calls are mocked)
+```
+
+- Layered design: `storage/` → `fetchers/`+`analysis/` → `services/` →
+  CLI/GUI/showcase. Callers only import `redditpulse.services`.
+- Schema migrations are versioned (`PRAGMA user_version`) and run
+  automatically; old databases upgrade in place.
+- All Claude API calls are centralized in `analysis/llm.py`.
 
 ## Notes
 
 - **VADER sentiment** runs fully locally — free, no API needed
-- **Claude API** is only called for keyword generation and theme analysis (~$0.01 per run)
-- Comments are deduplicated by Reddit ID across fetches
-- The SQLite database (`redditpulse.db`) stores all comments and analysis history locally
+- **Claude API** is used for keyword generation, theme analysis, and optional
+  LLM sentiment (~$0.01 per run with the default Haiku model)
+- The SQLite database (`redditpulse.db`) stores comments, fetch runs, and
+  analysis history locally

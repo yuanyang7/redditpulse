@@ -1,6 +1,6 @@
 [project]
 name = "redditpulse"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fetch and analyze Reddit comments on any topic"
 requires-python = ">=3.10"
 dependencies = [
@@ -16,6 +16,11 @@ dependencies = [
     "textblob>=0.17",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
 [project.scripts]
 redditpulse = "redditpulse.cli:main"
 redditpulse-gui = "redditpulse.gui:main"
@@ -23,3 +28,9 @@ redditpulse-gui = "redditpulse.gui:main"
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["redditpulse*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
