@@ -54,6 +54,13 @@ with st.sidebar:
         selected = None
         st.info("No topics yet. Create one below.")
 
+    # Clear cached per-topic results when the selected topic changes, so tabs
+    # don't show stale results from a previously viewed topic.
+    if st.session_state.get("active_topic") != selected:
+        st.session_state["active_topic"] = selected
+        for k in ("last_analysis", "browse_data", "eval_result"):
+            st.session_state.pop(k, None)
+
     # ------ New topic search ------
     st.markdown("### New Search")
     new_topic = st.text_input("Topic", placeholder="e.g. AI and privacy")
