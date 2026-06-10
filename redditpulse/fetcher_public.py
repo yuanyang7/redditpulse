@@ -25,26 +25,46 @@ BASE = "https://www.reddit.com"
 ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
 
 
-def _get(url: str, params: dict, max_retries: int = 4) -> requests.Response:
-    """GET a Reddit RSS URL, retrying 429s with exponential backoff.
+# If Reddit says the rate-limit window resets in <= this many seconds, we wait
+# it out inline; longer than this we fail fast so the user isn't stuck staring
+# at a frozen spinner for minutes.
+MAX_INLINE_WAIT = 30.0
 
-    429 (Too Many Requests) is transient, so we back off and retry. 401/403
-    are hard blocks and raise immediately.
+
+def _retry_after_seconds(resp: requests.Response) -> float | None:
+    """Seconds to wait before retrying a 429, from Reddit's rate-limit headers."""
+    retry_after = resp.headers.get("Retry-After")
+    if retry_after and retry_after.replace(".", "", 1).isdigit():
+        return float(retry_after)
+    reset = resp.headers.get("x-ratelimit-reset")
+    if reset and reset.replace(".", "", 1).isdigit():
+        return float(reset)
+    return None
+
+
+def _get(url: str, params: dict, max_retries: int = 4) -> requests.Response:
+    """GET a Reddit RSS URL, retrying 429s with backoff.
+
+    429 (Too Many Requests) is transient: we honor Reddit's rate-limit reset
+    header and wait it out if it's short, otherwise fail fast with the exact
+    wait time. 401/403 are hard blocks and raise immediately.
     """
     delay = 3.0
     for attempt in range(max_retries):
         resp = requests.get(url, headers=HEADERS, params=params, timeout=10)
         if resp.status_code == 429:
-            if attempt < max_retries - 1:
-                retry_after = resp.headers.get("Retry-After")
-                wait = float(retry_after) if retry_after and retry_after.isdigit() else delay
-                time.sleep(wait)
+            wait = _retry_after_seconds(resp)
+            # No header, or a short window we can afford to wait out: back off.
+            if attempt < max_retries - 1 and (wait is None or wait <= MAX_INLINE_WAIT):
+                time.sleep(wait if wait is not None else delay)
                 delay *= 2  # exponential backoff
                 continue
+            secs = int(wait) if wait is not None else None
+            when = f"in about {secs} seconds" if secs else "in a few minutes"
             raise RuntimeError(
-                "Reddit is rate-limiting public RSS requests (HTTP 429) even after "
-                "retries. Wait a few minutes and try again, reduce the Limit, or "
-                "provide Reddit credentials in .env and uncheck 'Use public API'."
+                f"Reddit's public RSS rate limit is exhausted — try again {when}. "
+                "Reduce the Limit, or provide Reddit credentials in .env and "
+                "uncheck 'Use public API' for higher limits."
             )
         if resp.status_code in (401, 403):
             raise RuntimeError(
