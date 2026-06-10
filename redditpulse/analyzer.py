@@ -87,6 +87,10 @@ def generate_keywords(topic: str) -> list[str]:
             "role": "user",
             "content": (
                 f"Generate 5-8 effective Reddit search keywords/phrases for the topic: \"{topic}\"\n\n"
+                "Keep the keywords neutral and balanced. Avoid phrases that presuppose a "
+                "negative or positive outcome (e.g. prefer \"hiring\" over \"hiring freeze\", "
+                "\"job market\" over \"job market crash\") so the search doesn't skew the "
+                "fetched comments toward one sentiment.\n\n"
                 "Return ONLY a JSON array of strings, no explanation. Example: [\"keyword1\", \"keyword2\"]"
             ),
         }],
