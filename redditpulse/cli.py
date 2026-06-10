@@ -200,7 +200,7 @@ def main():
     p_search.add_argument("topic", help="Topic to search (e.g. 'AI and privacy')")
     p_search.add_argument("--subreddits", "-s", help="Comma-separated subreddits (default: all)")
     p_search.add_argument("--limit", "-l", type=int, default=30, help="Submissions per keyword (default: 30)")
-    p_search.add_argument("--time", "-t", default="month", choices=["hour", "day", "week", "month", "year", "all"])
+    p_search.add_argument("--time", "-t", default="month", choices=["hour", "day", "week", "month", "6months", "year", "all"])
     p_search.add_argument("--refresh", action="store_true", help="Fetch more comments for existing topic")
     p_search.add_argument("--reset-comments", action="store_true", help="Delete old comments and re-fetch (keeps keywords)")
     p_search.add_argument("--public", action="store_true", help="Use public JSON API (no Reddit credentials needed)")

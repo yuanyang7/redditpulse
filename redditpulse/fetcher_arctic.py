@@ -31,6 +31,7 @@ _WINDOWS = {
     "day": timedelta(days=1),
     "week": timedelta(weeks=1),
     "month": timedelta(days=30),
+    "6months": timedelta(days=182),
     "year": timedelta(days=365),
     "all": None,
 }

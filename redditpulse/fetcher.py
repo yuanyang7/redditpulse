@@ -1,10 +1,15 @@
 """Fetch Reddit comments using PRAW based on keywords."""
 
 import os
+import time as _time
 import praw
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Reddit's search API only accepts hour/day/week/month/year/all. "6months" is a
+# synthetic window: fetch with "year" and drop comments older than this cutoff.
+_SIX_MONTHS_SECONDS = 182 * 24 * 60 * 60
 
 
 def get_reddit() -> praw.Reddit:
@@ -31,7 +36,7 @@ def search_comments(
         subreddits: Optional list of subreddits to search within. Defaults to "all".
         limit_per_keyword: Max submissions to fetch per keyword.
         sort: Sort order for search (relevance, hot, top, new, comments).
-        time_filter: Time filter (hour, day, week, month, year, all).
+        time_filter: Time filter (hour, day, week, month, 6months, year, all).
 
     Returns:
         List of comment dicts ready for db.insert_comments().
@@ -39,15 +44,27 @@ def search_comments(
     target = "+".join(subreddits) if subreddits else "all"
     subreddit = reddit.subreddit(target)
 
+    # "6months" isn't a real Reddit time_filter — search with "year" and apply a
+    # timestamp cutoff to the resulting comments below.
+    if time_filter == "6months":
+        search_filter = "year"
+        min_created = _time.time() - _SIX_MONTHS_SECONDS
+    else:
+        search_filter = time_filter
+        min_created = None
+
     seen_ids: set[str] = set()
     comments: list[dict] = []
     topic_words, context_words = _extract_word_groups(keywords)
 
     for keyword in keywords:
-        for submission in subreddit.search(keyword, sort=sort, time_filter=time_filter, limit=limit_per_keyword):
+        for submission in subreddit.search(keyword, sort=sort, time_filter=search_filter, limit=limit_per_keyword):
             submission.comments.replace_more(limit=0)  # skip "load more" stubs
             for comment in submission.comments.list():
                 if comment.id in seen_ids:
+                    continue
+
+                if min_created is not None and comment.created_utc < min_created:
                     continue
 
                 # Require both a topic word AND a context word for relevance

@@ -228,7 +228,10 @@ with st.sidebar:
     with col1:
         limit = st.number_input("Limit", min_value=1, max_value=100, value=30)
     with col2:
-        time_filter = st.selectbox("Time", ["month", "week", "day", "hour", "year", "all"])
+        time_filter = st.selectbox(
+            "Time", ["month", "week", "day", "hour", "6months", "year", "all"],
+            format_func=lambda v: "6 months" if v == "6months" else v,
+        )
 
     subreddits = st.text_input("Subreddits", placeholder="all (comma-separated)")
     use_public = st.checkbox(
