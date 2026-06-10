@@ -224,6 +224,33 @@ with st.sidebar:
     st.markdown("### New Search")
     new_topic = st.text_input("Topic", placeholder="e.g. AI and privacy")
 
+    # ------ Keyword generation & review ------
+    review = st.session_state.get("keyword_review")
+    if st.button("Generate Keywords", use_container_width=True):
+        if not new_topic.strip():
+            st.warning("Enter a topic first.")
+        else:
+            with st.spinner("Generating keywords..."):
+                try:
+                    keywords = core.generate_keywords(new_topic.strip())
+                    st.session_state["keyword_review"] = {
+                        "topic": new_topic.strip(),
+                        "text": ", ".join(keywords),
+                    }
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+
+    keyword_override = None
+    if review and review["topic"] == new_topic.strip():
+        edited = st.text_area(
+            "Keywords (review and edit before fetching)",
+            value=review["text"],
+            help="Comma-separated. Edit out anything outdated or irrelevant "
+                 "(e.g. drop a stale year) before fetching.",
+        )
+        keyword_override = [k.strip() for k in edited.split(",") if k.strip()]
+
     col1, col2 = st.columns(2)
     with col1:
         limit = st.number_input("Limit", min_value=1, max_value=100, value=30)
@@ -257,8 +284,10 @@ with st.sidebar:
                         public=use_public,
                         refresh=True,
                         min_relevance=min_relevance if min_relevance > 0 else None,
+                        keywords=keyword_override,
                     )
                     _refresh_topics()
+                    st.session_state.pop("keyword_review", None)
                     st.session_state["pending_topic_select"] = new_topic.strip()
                     msg = (
                         f"Found {result['fetched']} comments, "

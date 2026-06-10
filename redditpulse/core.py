@@ -25,6 +25,11 @@ class DuplicateTopicError(Exception):
     pass
 
 
+def generate_keywords(topic: str) -> list[str]:
+    """Generate suggested Reddit search keywords for a topic (for review before fetching)."""
+    return analyzer.generate_keywords(topic)
+
+
 def search_topic(
     topic: str,
     subreddits: list[str] | None = None,
@@ -35,6 +40,7 @@ def search_topic(
     reset_comments: bool = False,
     keep_analyses: bool = False,
     min_relevance: float | None = None,
+    keywords: list[str] | None = None,
 ) -> dict:
     """Fetch Reddit comments for a topic. Returns status info dict."""
     conn = db.get_connection()
@@ -61,7 +67,8 @@ def search_topic(
 
     # Generate or reuse keywords
     if not topic_row:
-        keywords = analyzer.generate_keywords(topic)
+        if not keywords:
+            keywords = analyzer.generate_keywords(topic)
         topic_id = db.create_topic(conn, topic, keywords)
     else:
         topic_id = topic_row["id"]
