@@ -133,6 +133,7 @@ def analyze_topic(
     limit: int = 500,
     sentiment_only: bool = False,
     reset_analyses: bool = False,
+    sentiment_model: str = "vader",
 ) -> dict:
     """Run sentiment + optional theme analysis. Returns full result dict."""
     conn = db.get_connection()
@@ -149,7 +150,8 @@ def analyze_topic(
     if not comments:
         raise NoCommentsError(f"No comments found for '{topic}'.")
 
-    result = analyzer.run_full_analysis(topic, comments, skip_claude=sentiment_only)
+    result = analyzer.run_full_analysis(topic, comments, skip_claude=sentiment_only,
+                                        sentiment_model=sentiment_model)
 
     db.save_analysis(
         conn,

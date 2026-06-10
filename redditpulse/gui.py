@@ -267,23 +267,30 @@ with tab_dash:
 with tab_analyze:
     st.subheader(f"Analyze: {selected}")
 
-    ac1, ac2 = st.columns(2)
+    ac1, ac2, ac3 = st.columns(3)
     with ac1:
         analyze_limit = st.number_input("Max comments", min_value=10, max_value=2000, value=500, key="analyze_limit")
     with ac2:
-        sentiment_only = st.checkbox("Sentiment only (skip Claude)", value=False, key="sentiment_only")
+        sentiment_model = st.selectbox(
+            "Sentiment model", ["vader", "claude"], key="sentiment_model_choice",
+            help="vader: local, instant, rule-based. claude: LLM, slower + uses "
+                 "API tokens, but far better at sarcasm/context.",
+        )
+    with ac3:
+        sentiment_only = st.checkbox("Sentiment only (skip themes)", value=False, key="sentiment_only")
 
     reset_analyses = st.checkbox("Clear previous analyses first", value=False, key="reset_analyses")
 
     if st.button("🔬 Run Analysis", use_container_width=True, type="primary"):
         mode = "sentiment-only" if sentiment_only else "full"
-        with st.spinner(f"Running {mode} analysis on {selected}..."):
+        with st.spinner(f"Running {mode} analysis ({sentiment_model}) on {selected}..."):
             try:
                 result = core.analyze_topic(
                     topic=selected,
                     limit=analyze_limit,
                     sentiment_only=sentiment_only,
                     reset_analyses=reset_analyses,
+                    sentiment_model=sentiment_model,
                 )
                 st.session_state["last_analysis"] = result
                 _refresh_topics()

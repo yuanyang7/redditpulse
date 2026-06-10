@@ -45,6 +45,38 @@ def _label(compound: float) -> str:
     return "neutral"
 
 
+# Nominal compound score per Claude label, so downstream code that expects a
+# numeric compound (averages, sorting) keeps working.
+_LABEL_COMPOUND = {"positive": 1.0, "negative": -1.0, "neutral": 0.0}
+
+
+def analyze_sentiment_claude(comments: list[dict]) -> dict:
+    """Classify each comment's sentiment with Claude. Same shape as analyze_sentiment."""
+    labels = classify_sentiment_batch([c["body"] for c in comments])
+    scores = []
+    for c, label in zip(comments, labels):
+        label = label if label in _LABEL_COMPOUND else "neutral"
+        scores.append({
+            "reddit_id": c["reddit_id"],
+            "compound": _LABEL_COMPOUND[label],
+            "label": label,
+        })
+
+    pos = sum(1 for s in scores if s["label"] == "positive")
+    neg = sum(1 for s in scores if s["label"] == "negative")
+    neu = sum(1 for s in scores if s["label"] == "neutral")
+    avg = sum(s["compound"] for s in scores) / len(scores) if scores else 0
+
+    return {
+        "total": len(scores),
+        "positive": pos,
+        "negative": neg,
+        "neutral": neu,
+        "average_compound": round(avg, 4),
+        "scores": scores,
+    }
+
+
 def generate_keywords(topic: str) -> list[str]:
     """Use Claude to generate optimal Reddit search keywords for a topic."""
     client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -128,9 +160,16 @@ def classify_sentiment_batch(texts: list[str], batch_size: int = 50) -> list[str
     return labels
 
 
-def run_full_analysis(topic: str, comments: list[dict], skip_claude: bool = False) -> dict:
-    """Run sentiment analysis, and optionally theme analysis via Claude."""
-    sentiment = analyze_sentiment(comments)
+def run_full_analysis(topic: str, comments: list[dict], skip_claude: bool = False,
+                      sentiment_model: str = "vader") -> dict:
+    """Run sentiment analysis, and optionally theme analysis via Claude.
+
+    sentiment_model: "vader" (local, fast) or "claude" (LLM, more nuanced).
+    """
+    if sentiment_model == "claude":
+        sentiment = analyze_sentiment_claude(comments)
+    else:
+        sentiment = analyze_sentiment(comments)
     themes = analyze_themes(topic, comments) if not skip_claude else {}
     return {
         "sentiment": {k: v for k, v in sentiment.items() if k != "scores"},
