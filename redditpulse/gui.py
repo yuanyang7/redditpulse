@@ -299,6 +299,10 @@ def _search_progress():
         if not job["finished"]:
             if st.button("Stop", use_container_width=True, key="stop_search_job"):
                 job["stop_event"].set()
+            # st.status auto-completes (spinner -> check) when the `with` block
+            # exits unless told otherwise — re-assert "running" each fragment
+            # tick so the icon doesn't flicker between loading and done.
+            status_box.update(state="running")
         else:
             level, msg = _job_message(job)
             if level == "error":
