@@ -121,7 +121,7 @@ def search_comments(
 
 
 def _search(subreddit: str, keyword: str, limit: int, after: str | None,
-            max_retries: int = 3) -> list[dict] | None:
+            max_retries: int = 4) -> list[dict] | None:
     """Run one comment body search.
 
     Returns a list of raw Arctic Shift comment dicts on success (possibly
@@ -143,11 +143,11 @@ def _search(subreddit: str, keyword: str, limit: int, after: str | None,
     if after:
         params["after"] = after
 
-    delay = 2.0
+    delay = 3.0
     for attempt in range(max_retries):
         try:
             resp = requests.get(f"{BASE}/api/comments/search", headers=HEADERS,
-                                params=params, timeout=30)
+                                params=params, timeout=60)
         except requests.Timeout:
             # Server took too long on this body search — transient, retry/skip.
             if attempt < max_retries - 1:
