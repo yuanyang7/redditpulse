@@ -5,6 +5,7 @@ dist/
 build/
 .env
 *.db
+*.db-*
 .venv/
 results.json
 *.json
