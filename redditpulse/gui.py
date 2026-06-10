@@ -436,6 +436,17 @@ with tab_dash:
 
     st.markdown(f"**Keywords:** {summary['keywords']}")
 
+    note_input = st.text_area(
+        "Note",
+        value=summary.get("note", ""),
+        key=f"note_{selected}",
+        placeholder="e.g. v2 — re-fetched after broadening keywords",
+        help="Freeform note to help you tell topic versions apart. Saved automatically.",
+    )
+    if note_input != summary.get("note", ""):
+        core.set_topic_note(selected, note_input)
+        _refresh_topics()
+
     analysis = summary.get("latest_analysis")
     if analysis and analysis.get("sentiment"):
         st.markdown("---")

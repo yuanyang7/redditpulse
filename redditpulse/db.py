@@ -56,6 +56,13 @@ def init_db(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # column already exists
 
+    # Migrate: add note column to topics if it doesn't exist yet
+    try:
+        conn.execute("ALTER TABLE topics ADD COLUMN note TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
 
 def create_topic(conn: sqlite3.Connection, name: str, keywords: list[str]) -> int:
     now = datetime.now(timezone.utc).isoformat()
@@ -75,6 +82,12 @@ def get_topic(conn: sqlite3.Connection, name: str) -> dict | None:
 def get_all_topics(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute("SELECT * FROM topics ORDER BY created_at DESC").fetchall()
     return [dict(r) for r in rows]
+
+
+def set_topic_note(conn: sqlite3.Connection, topic_id: int, note: str | None) -> None:
+    """Set or clear the freeform note for a topic."""
+    conn.execute("UPDATE topics SET note = ? WHERE id = ?", (note, topic_id))
+    conn.commit()
 
 
 def delete_topic(conn: sqlite3.Connection, topic_id: int) -> None:

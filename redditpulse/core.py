@@ -204,8 +204,21 @@ def list_topics() -> list[dict]:
             "keywords": t["keywords"],
             "comment_count": count,
             "created_at": t["created_at"],
+            "note": t["note"] or "",
         })
     return result
+
+
+def set_topic_note(topic: str, note: str) -> None:
+    """Set or clear the freeform note for a topic."""
+    conn = db.get_connection()
+    db.init_db(conn)
+
+    topic_row = db.get_topic(conn, topic)
+    if not topic_row:
+        raise TopicNotFoundError(f"Topic '{topic}' not found.")
+
+    db.set_topic_note(conn, topic_row["id"], note.strip() or None)
 
 
 def browse_comments(
@@ -501,6 +514,7 @@ def get_topic_summary(topic: str) -> dict:
         "keywords": topic_row["keywords"],
         "comment_count": count,
         "created_at": topic_row["created_at"],
+        "note": topic_row["note"] or "",
         "latest_analysis": None,
     }
 
