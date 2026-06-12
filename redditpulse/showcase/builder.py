@@ -10,11 +10,12 @@ topic, editable in the GUI's Showcase tab or via services.set_showcase_config):
 
     {
         "enabled": true,            # include this topic on the site
+        "order": 0,                 # display order on the index (lower first)
         "title": "Custom title",    # defaults to the topic name
         "description": "...",       # intro text under the title
         "sections": [...],          # which sections to render, in order
         "section_notes": {          # optional commentary per section
-            "trends": "Spike in March follows the keynote."
+            "themes": "Spike in March follows the keynote."
         }
     }
 
@@ -34,8 +35,7 @@ from . import templates
 
 # All known sections, in default render order.
 SECTIONS = [
-    "sentiment", "trends", "themes", "emotions", "breakdown",
-    "opinions", "insights", "top_comments",
+    "sentiment", "opinions", "themes", "emotions", "top_comments",
 ]
 
 SITE_TITLE = "RedditPulse Showcase"
@@ -88,22 +88,26 @@ def _topic_payload(topic_name: str, config: dict) -> dict | None:
             })
     top_comments.sort(key=lambda c: c["score"], reverse=True)
 
+    date_range = None
+    if trends and trends["points"]:
+        dates = [p["date"] for p in trends["points"]]
+        date_range = {"from": min(dates), "to": max(dates)}
+
+    sections = [s for s in (config.get("sections") or list(SECTIONS)) if s in SECTIONS]
+
     return {
         "name": topic_name,
         "title": config.get("title") or topic_name,
         "description": config.get("description", ""),
-        "sections": config.get("sections") or list(SECTIONS),
+        "sections": sections or list(SECTIONS),
         "section_notes": config.get("section_notes") or {},
         "comment_count": summary["comment_count"],
         "run_at": analysis["run_at"][:10],
+        "date_range": date_range,
         "analysis": {
             "sentiment": result.get("sentiment", {}),
             "themes": result.get("themes", {}),
         },
-        "trends": {
-            "bucket": trends["bucket"],
-            "points": trends["points"],
-        } if trends else None,
         "top_comments": top_comments[:6],
     }
 
@@ -137,6 +141,12 @@ def build_site(output_dir: str | Path | None = None) -> Path:
         if payload is None:
             continue
 
+        date_range = payload["date_range"]
+        extra_badges = (
+            f'<span class="badge blue">data {date_range["from"]} to {date_range["to"]}</span>'
+            if date_range else ""
+        )
+
         slug = slugify(name)
         page = (
             templates.TOPIC_TEMPLATE
@@ -146,7 +156,7 @@ def build_site(output_dir: str | Path | None = None) -> Path:
             .replace("__DESCRIPTION__", _esc(payload["description"]))
             .replace("__COMMENT_COUNT__", str(payload["comment_count"]))
             .replace("__RUN_AT__", payload["run_at"])
-            .replace("__EXTRA_BADGES__", "")
+            .replace("__EXTRA_BADGES__", extra_badges)
             .replace("__GENERATED_AT__", generated_at)
         )
         (topics_dir / f"{slug}.html").write_text(page)

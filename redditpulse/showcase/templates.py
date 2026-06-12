@@ -199,7 +199,8 @@ const RENDERERS = {
       mark: { type: "bar", color: "#2D5BFF" },
       encoding: {
         x: { field: "count", type: "quantitative", title: "Mentions" },
-        y: { field: "theme", type: "nominal", sort: "-x", title: null },
+        y: { field: "theme", type: "nominal", sort: "-x", title: null,
+             axis: { labelLimit: 280 } },
         tooltip: [{ field: "theme" }, { field: "count" }, { field: "summary" }],
       }, config: VEGA_CONF,
     }, { actions: false });
@@ -219,24 +220,8 @@ const RENDERERS = {
       mark: { type: "bar", color: "#FF6B4A" },
       encoding: {
         x: { field: "prevalence", type: "quantitative", title: "Prevalence" },
-        y: { field: "emotion", type: "nominal", sort: "-x", title: null },
-      }, config: VEGA_CONF,
-    }, { actions: false });
-    return w;
-  },
-  breakdown(note) {
-    const b = D.analysis.themes?.subtopic_breakdown;
-    if (!b || !b.categories?.length) return null;
-    const w = section(b.dimension || "Breakdown", note);
-    const card = el(`<div class="card"></div>`);
-    w.appendChild(card);
-    vegaEmbed(chartDiv(card), {
-      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      data: { values: b.categories }, width: "container", height: b.categories.length * 32,
-      mark: { type: "bar", color: "#7C5CFF" },
-      encoding: {
-        x: { field: "percentage", type: "quantitative", title: "%" },
-        y: { field: "category", type: "nominal", sort: "-x", title: null },
+        y: { field: "emotion", type: "nominal", sort: "-x", title: null,
+             axis: { labelLimit: 280 } },
       }, config: VEGA_CONF,
     }, { actions: false });
     return w;
@@ -250,55 +235,6 @@ const RENDERERS = {
       `<p><span class="badge ${o.strength === "strong" ? "" : "blue"}">${esc(o.strength || "?")}</span>
        ${esc(o.stance)}</p>`)));
     w.appendChild(card);
-    return w;
-  },
-  insights(note) {
-    const ins = D.analysis.themes?.key_insights || [];
-    if (!ins.length) return null;
-    const w = section("Key insights", note);
-    const card = el(`<div class="card"><ul class="insights">
-      ${ins.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`);
-    const c = D.analysis.themes?.controversy_level;
-    if (c) {
-      const text = typeof c === "object" ? `${c.level ?? "?"} — ${c.explanation ?? ""}` : c;
-      card.appendChild(el(`<div class="note"><b>Controversy:</b> ${esc(text)}</div>`));
-    }
-    w.appendChild(card);
-    return w;
-  },
-  trends(note) {
-    const t = D.trends;
-    if (!t || !t.points?.length) return null;
-    const w = section("Sentiment over time", note);
-    const card = el(`<div class="card"></div>`);
-    w.appendChild(card);
-    const long = [];
-    t.points.forEach(p => {
-      long.push({ period: p.period, kind: "% positive", value: p.pct_positive });
-      long.push({ period: p.period, kind: "% negative", value: p.pct_negative });
-    });
-    vegaEmbed(chartDiv(card), {
-      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      data: { values: long }, width: "container", height: 220,
-      mark: { type: "line", point: true },
-      encoding: {
-        x: { field: "period", type: "ordinal", title: `By ${t.bucket}`,
-             axis: { labelAngle: -45 } },
-        y: { field: "value", type: "quantitative", title: "% of comments" },
-        color: { field: "kind", title: null,
-                 scale: { domain: ["% positive", "% negative"],
-                          range: ["#1FB6A6", "#FF4D6D"] } },
-      }, config: VEGA_CONF,
-    }, { actions: false });
-    vegaEmbed(chartDiv(card), {
-      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      data: { values: t.points }, width: "container", height: 120,
-      mark: { type: "bar", color: "#2D5BFF" },
-      encoding: {
-        x: { field: "period", type: "ordinal", title: null, axis: { labelAngle: -45 } },
-        y: { field: "count", type: "quantitative", title: "Comments" },
-      }, config: VEGA_CONF,
-    }, { actions: false });
     return w;
   },
   top_comments(note) {

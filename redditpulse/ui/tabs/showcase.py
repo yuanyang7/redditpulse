@@ -8,12 +8,9 @@ from redditpulse.showcase import SECTIONS, build_site, default_config
 
 SECTION_LABELS = {
     "sentiment": "Sentiment overview",
-    "trends": "Sentiment over time",
+    "opinions": "Key opinions",
     "themes": "Top themes",
     "emotions": "Emotions",
-    "breakdown": "Subtopic breakdown",
-    "opinions": "Key opinions",
-    "insights": "Key insights",
     "top_comments": "Top comments",
 }
 

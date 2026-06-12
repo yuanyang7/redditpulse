@@ -56,7 +56,7 @@ def test_build_site_includes_analyzed_topics(tmp_path):
         .replace("<\\/", "</"))
     assert payload["analysis"]["sentiment"]["total"] == 2
     assert payload["sections"] == builder.SECTIONS
-    assert payload["trends"]["points"]
+    assert payload["date_range"]["from"] <= payload["date_range"]["to"]
     assert payload["top_comments"]
 
 
