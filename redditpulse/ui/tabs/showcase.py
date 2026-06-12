@@ -21,25 +21,37 @@ SECTION_LABELS = {
 def _render_publish_manager() -> None:
     with st.expander("Manage published topics", expanded=False):
         st.caption(
-            "Choose which topics appear on the showcase site, then build to "
-            "apply changes."
+            "Choose which topics appear on the showcase site and the order "
+            "they're listed in (lowest first), then build to apply changes."
         )
         topics = services.list_topics()
+        configs = {t["name"]: services.get_showcase_config(t["name"]) or default_config(t["name"])
+                   for t in topics}
+        topics.sort(key=lambda t: (configs[t["name"]].get("order", 0), t["name"]))
+
         changes = {}
         for t in topics:
             name = t["name"]
-            config = services.get_showcase_config(name) or default_config(name)
-            checked = st.checkbox(
-                f"{name}  ({t['comment_count']} comments)",
-                value=config.get("enabled", True),
-                key=f"sc_pub_{name}",
-            )
-            if checked != config.get("enabled", True):
-                changes[name] = (config, checked)
+            config = configs[name]
+            col_order, col_check = st.columns([1, 6])
+            with col_order:
+                order = st.number_input(
+                    "Order", value=int(config.get("order", 0)), step=1,
+                    key=f"sc_pub_order_{name}", label_visibility="collapsed",
+                )
+            with col_check:
+                checked = st.checkbox(
+                    f"{name}  ({t['comment_count']} comments)",
+                    value=config.get("enabled", True),
+                    key=f"sc_pub_{name}",
+                )
+            if checked != config.get("enabled", True) or order != config.get("order", 0):
+                changes[name] = (config, checked, order)
 
         if st.button("Save publish settings", key="sc_pub_save"):
-            for name, (config, checked) in changes.items():
+            for name, (config, checked, order) in changes.items():
                 config["enabled"] = checked
+                config["order"] = order
                 services.set_showcase_config(name, config)
             st.success(f"Updated {len(changes)} topic(s)." if changes
                        else "No changes.")

@@ -45,6 +45,7 @@ SITE_SUBTITLE = "What Reddit thinks — sentiment and themes mined from real dis
 def default_config(topic_name: str) -> dict:
     return {
         "enabled": True,
+        "order": 0,
         "title": topic_name,
         "description": "",
         "sections": list(SECTIONS),
@@ -122,11 +123,16 @@ def build_site(output_dir: str | Path | None = None) -> Path:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     cards = []
 
+    enabled_topics = []
     for topic in services.list_topics():
         name = topic["name"]
         config = services.get_showcase_config(name) or default_config(name)
         if not config.get("enabled", True):
             continue
+        enabled_topics.append((name, config))
+    enabled_topics.sort(key=lambda t: (t[1].get("order", 0), t[0]))
+
+    for name, config in enabled_topics:
         payload = _topic_payload(name, config)
         if payload is None:
             continue
