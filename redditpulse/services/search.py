@@ -92,6 +92,17 @@ def search_topic(
             min_relevance=min_relevance,
         )
 
+        truncated_subreddits: list[str] = []
+        skipped_keywords: list[str] = []
+
+        def _on_truncated(subreddit: str) -> None:
+            if subreddit not in truncated_subreddits:
+                truncated_subreddits.append(subreddit)
+
+        def _on_skipped(keyword: str) -> None:
+            if keyword not in skipped_keywords:
+                skipped_keywords.append(keyword)
+
         try:
             fetcher = get_fetcher(source)
             comments = fetcher.search_comments(
@@ -101,6 +112,8 @@ def search_topic(
                 time_range=time_range,
                 progress_callback=progress_callback,
                 stop_check=stop_check,
+                on_truncated=_on_truncated,
+                on_skipped=_on_skipped,
             )
 
             # Optional semantic relevance filtering
@@ -121,6 +134,8 @@ def search_topic(
             status="stopped" if stopped else "done",
             fetched=pre_filter_count,
             inserted=inserted,
+            truncated_subreddits=truncated_subreddits,
+            skipped_keywords=skipped_keywords,
         )
 
         result = {
@@ -135,4 +150,8 @@ def search_topic(
             result["filtered_out"] = pre_filter_count - len(comments)
         if stopped:
             result["stopped"] = True
+        if truncated_subreddits:
+            result["truncated_subreddits"] = truncated_subreddits
+        if skipped_keywords:
+            result["skipped_keywords"] = skipped_keywords
         return result

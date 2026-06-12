@@ -88,6 +88,18 @@ def job_message(job: dict) -> tuple[str, str]:
     else:  # reset
         msg = "Comments & analyses cleared, re-fetched"
 
+    truncated = result.get("truncated_subreddits")
+    if truncated:
+        msg += (f" — hit the result cap for {', '.join(f'r/{s}' for s in truncated)}, "
+                "older matches weren't fetched (see Data tab)")
+
+    skipped = result.get("skipped_keywords")
+    if skipped:
+        msg += (f" — stopped before fetching {', '.join(f'\"{k}\"' for k in skipped)} "
+                "(see Data tab)")
+
     if stopped:
         return "warning", "Stopped early — " + msg
+    if truncated or skipped:
+        return "warning", msg
     return "success", msg

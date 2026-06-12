@@ -36,6 +36,8 @@ def _runs_section(topic: str) -> None:
         "Fetched": r["fetched"],
         "New": r["inserted"],
         "Status": r["status"],
+        "Truncated": ", ".join(r["truncated_subreddits"] or []),
+        "Skipped": ", ".join(r["skipped_keywords"] or []),
     } for r in runs])
     st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -45,6 +47,37 @@ def _runs_section(topic: str) -> None:
             for r in errored:
                 st.markdown(f"**Run {r['id']}** ({r['started_at'][:16].replace('T', ' ')})")
                 st.code(r["error"], language=None)
+
+    truncated = [r for r in runs if r.get("truncated_subreddits")]
+    if truncated:
+        with st.expander(f"Truncated queries ({len(truncated)} run(s))"):
+            st.caption(
+                "These runs hit their per-query result cap for at least one "
+                "subreddit/keyword combination, sorted newest-first — so "
+                "older matching comments exist but weren't fetched. Re-run "
+                "with a narrower time window or a higher limit to fill the gap."
+            )
+            for r in truncated:
+                started = r["started_at"][:16].replace("T", " ")
+                st.markdown(
+                    f"**Run {r['id']}** ({started}): "
+                    + ", ".join(f"r/{s}" for s in r["truncated_subreddits"])
+                )
+
+    skipped = [r for r in runs if r.get("skipped_keywords")]
+    if skipped:
+        with st.expander(f"Skipped keywords from early stops ({len(skipped)} run(s))"):
+            st.caption(
+                "These runs were stopped before finishing — the keywords "
+                "below got no results, or only partial results across "
+                "subreddits, because the run ended before reaching them."
+            )
+            for r in skipped:
+                started = r["started_at"][:16].replace("T", " ")
+                st.markdown(
+                    f"**Run {r['id']}** ({started}): "
+                    + ", ".join(f"\"{k}\"" for k in r["skipped_keywords"])
+                )
 
     rc1, rc2 = st.columns([2, 1])
     with rc1:

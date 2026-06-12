@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..config import get_settings
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 
 def connect(db_path: Path | str | None = None) -> sqlite3.Connection:
@@ -161,9 +161,23 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "topics", "showcase_config", "TEXT")
 
 
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """Track per-run query truncation, so fetches that silently dropped
+    results (a query hit its per-keyword/subreddit cap) are visible."""
+    _add_column_if_missing(conn, "fetch_runs", "truncated_subreddits", "TEXT")
+
+
+def _migrate_v4(conn: sqlite3.Connection) -> None:
+    """Track keywords left unprocessed (or partially processed) by an early
+    stop, so runs ended via the Stop button show what's missing."""
+    _add_column_if_missing(conn, "fetch_runs", "skipped_keywords", "TEXT")
+
+
 _MIGRATIONS = {
     1: _migrate_v1,
     2: _migrate_v2,
+    3: _migrate_v3,
+    4: _migrate_v4,
 }
 
 

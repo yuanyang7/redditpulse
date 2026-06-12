@@ -31,6 +31,11 @@ DEFAULT_SUBREDDITS = [
     "technology", "privacy", "artificial", "Futurology", "AskReddit",
 ]
 
+# When a (subreddit, keyword) query comes back full (truncated), fetch up to
+# this many additional older pages by narrowing `before` to just past the
+# oldest comment seen. Bounds the extra cost of backfilling a busy pair.
+MAX_EXTRA_PAGES = 2
+
 
 def search_comments(
     keywords: list[str],
@@ -39,6 +44,8 @@ def search_comments(
     time_range: TimeRange | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
     stop_check: Callable[[], bool] | None = None,
+    on_truncated: Callable[[str], None] | None = None,
+    on_skipped: Callable[[str], None] | None = None,
 ) -> list[dict]:
     """Search Arctic Shift for comments matching keywords across subreddits.
 
@@ -48,12 +55,27 @@ def search_comments(
     If `progress_callback` is given, it's called before each query as
     `progress_callback(done, total, description)`. If `stop_check` is given
     and returns truthy, the search stops early and returns what it has.
+
+    Each (subreddit, keyword) query is capped at `limit_per_keyword` results,
+    newest first (`sort=desc`). If a query returns a full page of results,
+    older matching comments for that pair exist but weren't fetched yet — up
+    to `MAX_EXTRA_PAGES` additional older pages are fetched automatically to
+    backfill them. If the pair is still truncated after that (a genuinely
+    very high-volume pair), `on_truncated` is called once per affected
+    subreddit with the subreddit name.
+
+    If a stop is requested partway through, the current keyword (whose
+    subreddit loop was interrupted) and every keyword after it have no results
+    at all for some or all subreddits. When `on_skipped` is given, it's called
+    once per such keyword with the keyword text.
     """
     targets = [s.strip() for s in (subreddits or DEFAULT_SUBREDDITS) if s.strip()]
     time_range = time_range or TimeRange()
+    capped_limit = max(1, min(limit_per_keyword, 100))
 
     seen_ids: set[str] = set()
     comments: list[dict] = []
+    truncated_subreddits: set[str] = set()
     queries = 0
     failed = 0
     total_queries = len(keywords) * len(targets)
@@ -61,18 +83,27 @@ def search_comments(
 
     for keyword in keywords:
         if stopped:
-            break
+            if on_skipped:
+                on_skipped(keyword)
+            continue
         for subreddit in targets:
             if stop_check and stop_check():
                 stopped = True
+                if on_skipped:
+                    on_skipped(keyword)
                 break
             if progress_callback:
                 progress_callback(queries, total_queries, f"r/{subreddit} — \"{keyword}\"")
             queries += 1
-            result = _search(subreddit, keyword, limit_per_keyword, time_range)
-            if result is None:  # query gave up after repeated timeouts/errors
+            paged = _search_paginated(subreddit, keyword, capped_limit, time_range)
+            if paged is None:  # query gave up after repeated timeouts/errors
                 failed += 1
                 continue
+            result, truncated_pair = paged
+            if truncated_pair and subreddit not in truncated_subreddits:
+                truncated_subreddits.add(subreddit)
+                if on_truncated:
+                    on_truncated(subreddit)
             for raw in result:
                 cid = raw.get("id")
                 body = (raw.get("body") or "").strip()
@@ -105,6 +136,51 @@ def search_comments(
         )
 
     return comments
+
+
+def _search_paginated(subreddit: str, keyword: str, capped_limit: int,
+                      time_range: TimeRange) -> tuple[list[dict], bool] | None:
+    """Run `_search`, backfilling older pages if the first page comes back full.
+
+    Each page is capped at `capped_limit` results, newest first. If a page is
+    full, more matching comments older than its oldest result may exist, so
+    another page is fetched with `before` narrowed to that oldest comment's
+    date — up to `MAX_EXTRA_PAGES` extra pages total.
+
+    Returns `(raw_results, still_truncated)`, where `still_truncated` is True
+    if the last page fetched was still full (older matches likely remain even
+    after backfilling). Returns None if the very first page failed outright
+    (repeated timeouts/errors) — same convention as `_search`.
+    """
+    seen_ids: set[str] = set()
+    all_raw: list[dict] = []
+    before_utc = time_range.before_utc
+    truncated = False
+
+    for page in range(1 + MAX_EXTRA_PAGES):
+        page_range = TimeRange(after_utc=time_range.after_utc, before_utc=before_utc)
+        result = _search(subreddit, keyword, capped_limit, page_range)
+        if result is None:
+            if page == 0:
+                return None
+            break
+
+        for raw in result:
+            cid = raw.get("id")
+            if cid not in seen_ids:
+                seen_ids.add(cid)
+                all_raw.append(raw)
+
+        truncated = len(result) >= capped_limit
+        if not truncated or page == MAX_EXTRA_PAGES:
+            break
+
+        oldest_ts = min((raw.get("created_utc", 0) or 0) for raw in result)
+        if time_range.after_utc and oldest_ts <= time_range.after_utc:
+            break  # reached the start of the requested window
+        before_utc = oldest_ts
+
+    return all_raw, truncated
 
 
 def _search(subreddit: str, keyword: str, limit: int, time_range: TimeRange,

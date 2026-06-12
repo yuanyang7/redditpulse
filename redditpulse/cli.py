@@ -49,6 +49,14 @@ def cmd_search(args):
     if "filtered_out" in result:
         console.print(f"[yellow]Filtered out {result['filtered_out']} irrelevant comments (threshold: {args.min_relevance})[/yellow]")
     console.print(f"[green]Inserted {result['new_comments']} new comments (total: {result['total_comments']})[/green]")
+    if "truncated_subreddits" in result:
+        subs = ", ".join(f"r/{s}" for s in result["truncated_subreddits"])
+        console.print(f"[yellow]Hit the result cap for {subs} — older matches weren't fetched.[/yellow]")
+    if "skipped_keywords" in result:
+        kws = ", ".join(f'"{k}"' for k in result["skipped_keywords"])
+        console.print(f"[yellow]Stopped before fetching: {kws}[/yellow]")
+    if result.get("stopped"):
+        console.print("[yellow]Run was stopped early.[/yellow]")
 
 
 def cmd_analyze(args):

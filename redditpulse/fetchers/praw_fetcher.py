@@ -55,6 +55,8 @@ def search_comments(
     sort: str = "relevance",
     progress_callback: Callable[[int, int, str], None] | None = None,
     stop_check: Callable[[], bool] | None = None,
+    on_truncated: Callable[[str], None] | None = None,
+    on_skipped: Callable[[str], None] | None = None,
     reddit: praw.Reddit | None = None,
 ) -> list[dict]:
     """Search Reddit for submissions matching keywords, then collect their comments."""
@@ -72,12 +74,17 @@ def search_comments(
         if stop_check and stop_check():
             if progress_callback:
                 progress_callback(i, len(keywords), "Stopped")
+            if on_skipped:
+                for kw in keywords[i:]:
+                    on_skipped(kw)
             return comments
         if progress_callback:
             progress_callback(i, len(keywords), f"\"{keyword}\"")
+        num_submissions = 0
         for submission in subreddit.search(keyword, sort=sort,
                                            time_filter=search_filter,
                                            limit=limit_per_keyword):
+            num_submissions += 1
             submission.comments.replace_more(limit=0)  # skip "load more" stubs
             for comment in submission.comments.list():
                 if comment.id in seen_ids:
@@ -100,6 +107,9 @@ def search_comments(
                     permalink=f"https://reddit.com{comment.permalink}",
                     created_utc=comment.created_utc,
                 ))
+
+        if num_submissions >= limit_per_keyword and on_truncated:
+            on_truncated(target)
 
     if progress_callback:
         progress_callback(len(keywords), len(keywords), "Done")

@@ -48,6 +48,8 @@ def search_comments(
     time_range: TimeRange | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
     stop_check: Callable[[], bool] | None = None,
+    on_truncated: Callable[[str], None] | None = None,
+    on_skipped: Callable[[str], None] | None = None,
 ) -> list[dict]:
     """Search Reddit via public RSS feeds, no OAuth needed."""
     time_range = time_range or TimeRange()
@@ -55,9 +57,14 @@ def search_comments(
     comments: list[dict] = []
     words = keyword_words(keywords)
     use_keywords = keywords[:MAX_KEYWORDS]
+    if len(keywords) > MAX_KEYWORDS and on_truncated:
+        on_truncated("(keywords)")
 
     for i, keyword in enumerate(use_keywords):
         if stop_check and stop_check():
+            if on_skipped:
+                for kw in use_keywords[i:]:
+                    on_skipped(kw)
             break
         if progress_callback:
             progress_callback(i, len(use_keywords), f"\"{keyword}\"")
@@ -69,6 +76,10 @@ def search_comments(
         else:
             permalinks = _search_submissions(keyword, subreddit=None,
                                              limit=limit_per_keyword)
+
+        if len(permalinks) > MAX_POSTS_PER_KEYWORD and on_truncated:
+            for sr in (subreddits or ["(all)"]):
+                on_truncated(sr)
 
         for permalink in permalinks[:MAX_POSTS_PER_KEYWORD]:
             for c in _fetch_comments(permalink):

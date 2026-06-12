@@ -27,7 +27,8 @@ class FakeFetcher:
         self.calls = []
 
     def search_comments(self, keywords, subreddits=None, limit_per_keyword=25,
-                        time_range=None, progress_callback=None, stop_check=None):
+                        time_range=None, progress_callback=None, stop_check=None,
+                        on_truncated=None, on_skipped=None):
         self.calls.append({
             "keywords": keywords, "subreddits": subreddits,
             "time_range": time_range,

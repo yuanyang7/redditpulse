@@ -292,11 +292,17 @@ def create_fetch_run(
 
 def finish_fetch_run(conn: sqlite3.Connection, run_id: int, status: str,
                      fetched: int = 0, inserted: int = 0,
-                     error: str | None = None) -> None:
+                     error: str | None = None,
+                     truncated_subreddits: list[str] | None = None,
+                     skipped_keywords: list[str] | None = None) -> None:
     conn.execute(
         """UPDATE fetch_runs SET finished_at = ?, status = ?, fetched = ?,
-           inserted = ?, error = ? WHERE id = ?""",
-        (_now(), status, fetched, inserted, error, run_id),
+           inserted = ?, error = ?, truncated_subreddits = ?,
+           skipped_keywords = ? WHERE id = ?""",
+        (_now(), status, fetched, inserted, error,
+         json.dumps(truncated_subreddits) if truncated_subreddits else None,
+         json.dumps(skipped_keywords) if skipped_keywords else None,
+         run_id),
     )
     conn.commit()
 
@@ -308,10 +314,7 @@ def get_last_fetch_run(conn: sqlite3.Connection, topic_id: int) -> dict | None:
     ).fetchone()
     if not row:
         return None
-    run = dict(row)
-    run["keywords"] = json.loads(run["keywords"]) if run["keywords"] else []
-    run["subreddits"] = json.loads(run["subreddits"]) if run["subreddits"] else None
-    return run
+    return _decode_fetch_run(dict(row))
 
 
 def get_fetch_runs(conn: sqlite3.Connection, topic_id: int) -> list[dict]:
@@ -319,13 +322,19 @@ def get_fetch_runs(conn: sqlite3.Connection, topic_id: int) -> list[dict]:
         "SELECT * FROM fetch_runs WHERE topic_id = ? ORDER BY started_at DESC",
         (topic_id,),
     ).fetchall()
-    runs = []
-    for r in rows:
-        run = dict(r)
-        run["keywords"] = json.loads(run["keywords"]) if run["keywords"] else []
-        run["subreddits"] = json.loads(run["subreddits"]) if run["subreddits"] else None
-        runs.append(run)
-    return runs
+    return [_decode_fetch_run(dict(r)) for r in rows]
+
+
+def _decode_fetch_run(run: dict) -> dict:
+    run["keywords"] = json.loads(run["keywords"]) if run["keywords"] else []
+    run["subreddits"] = json.loads(run["subreddits"]) if run["subreddits"] else None
+    run["truncated_subreddits"] = (
+        json.loads(run["truncated_subreddits"]) if run["truncated_subreddits"] else None
+    )
+    run["skipped_keywords"] = (
+        json.loads(run["skipped_keywords"]) if run["skipped_keywords"] else None
+    )
+    return run
 
 
 def delete_fetch_run(conn: sqlite3.Connection, run_id: int,

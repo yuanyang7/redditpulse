@@ -134,3 +134,107 @@ def test_arctic_stop_check(mock_get, _sleep):
     )
     assert comments == []
     assert mock_get.call_count == 0
+
+
+@mock.patch("redditpulse.fetchers.arctic.time.sleep")
+@mock.patch("redditpulse.fetchers.arctic.requests.get")
+def test_arctic_backfills_truncated_page(mock_get, _sleep):
+    """A full first page triggers a second, older page; if that page comes
+    back under the cap, the pair is no longer reported as truncated and the
+    older comment it found is included."""
+    page1 = [
+        {"id": "c1", "author": "u", "body": "newest", "score": 1,
+         "subreddit": "tech", "created_utc": 2000000100},
+        {"id": "c2", "author": "u", "body": "next newest", "score": 1,
+         "subreddit": "tech", "created_utc": 2000000099},
+    ]
+    page2 = [
+        {"id": "c3", "author": "u", "body": "older", "score": 1,
+         "subreddit": "tech", "created_utc": 2000000050},
+    ]
+    mock_get.side_effect = [_response(data=page1), _response(data=page2)]
+
+    truncated = []
+    comments = arctic.search_comments(
+        ["k1"], subreddits=["tech"], limit_per_keyword=2,
+        on_truncated=truncated.append,
+    )
+    assert {c["reddit_id"] for c in comments} == {"c1", "c2", "c3"}
+    assert truncated == []  # backfill page wasn't full — gap closed
+
+    # Second page's `before` narrows to the first page's oldest comment.
+    second_call_params = mock_get.call_args_list[1].kwargs["params"]
+    assert "before" in second_call_params
+
+
+@mock.patch("redditpulse.fetchers.arctic.time.sleep")
+@mock.patch("redditpulse.fetchers.arctic.requests.get")
+def test_arctic_reports_skipped_keywords_on_stop(mock_get, _sleep):
+    """An immediate stop means every keyword is skipped (incl. the first,
+    whose subreddit loop never even started)."""
+    mock_get.return_value = _response(data=[])
+    skipped = []
+    arctic.search_comments(
+        ["k1", "k2"], subreddits=["a", "b"], stop_check=lambda: True,
+        on_skipped=skipped.append,
+    )
+    assert skipped == ["k1", "k2"]
+
+
+@mock.patch("redditpulse.fetchers.arctic.time.sleep")
+@mock.patch("redditpulse.fetchers.arctic.requests.get")
+def test_arctic_reports_partial_keyword_on_stop(mock_get, _sleep):
+    """A stop partway through "a" for k1 means k1 (incomplete) and k2
+    (untouched) are both reported as skipped."""
+    mock_get.return_value = _response(data=[])
+    calls = {"n": 0}
+
+    def stop_check():
+        calls["n"] += 1
+        return calls["n"] > 1  # let the first subreddit query through
+
+    skipped = []
+    arctic.search_comments(
+        ["k1", "k2"], subreddits=["a", "b"], stop_check=stop_check,
+        on_skipped=skipped.append,
+    )
+    assert skipped == ["k1", "k2"]
+
+
+@mock.patch("redditpulse.fetchers.arctic.time.sleep")
+@mock.patch("redditpulse.fetchers.arctic.requests.get")
+def test_arctic_reports_truncation(mock_get, _sleep):
+    """A full page of results for a (subreddit, keyword) pair means older
+    matching comments exist but weren't fetched — on_truncated should fire
+    once per affected subreddit."""
+    full_page = [
+        {"id": f"c{i}", "author": "u", "body": f"comment {i}", "score": 1,
+         "subreddit": "tech", "created_utc": 1700000000 + i}
+        for i in range(2)
+    ]
+    mock_get.return_value = _response(data=full_page)
+
+    truncated = []
+    arctic.search_comments(
+        ["k1", "k2"], subreddits=["tech"], limit_per_keyword=2,
+        on_truncated=truncated.append,
+    )
+    # Both keyword queries for "tech" hit the cap, but on_truncated fires once.
+    assert truncated == ["tech"]
+
+
+@mock.patch("redditpulse.fetchers.arctic.time.sleep")
+@mock.patch("redditpulse.fetchers.arctic.requests.get")
+def test_arctic_no_truncation_below_limit(mock_get, _sleep):
+    partial_page = [
+        {"id": "c1", "author": "u", "body": "comment", "score": 1,
+         "subreddit": "tech", "created_utc": 1700000000}
+    ]
+    mock_get.return_value = _response(data=partial_page)
+
+    truncated = []
+    arctic.search_comments(
+        ["k1"], subreddits=["tech"], limit_per_keyword=25,
+        on_truncated=truncated.append,
+    )
+    assert truncated == []
