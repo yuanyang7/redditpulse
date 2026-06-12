@@ -35,7 +35,7 @@ from . import templates
 
 # All known sections, in default render order.
 SECTIONS = [
-    "sentiment", "opinions", "themes", "emotions", "top_comments",
+    "sentiment", "opinions", "emotions", "insights", "top_comments",
 ]
 
 SITE_TITLE = "RedditPulse Showcase"

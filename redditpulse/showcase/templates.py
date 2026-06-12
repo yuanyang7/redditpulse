@@ -146,8 +146,8 @@ const VEGA_CONF = { background: "transparent",
 
 function el(html) {
   const div = document.createElement("div");
-  div.innerHTML = html;
-  return div;
+  div.innerHTML = html.trim();
+  return div.firstElementChild;
 }
 function esc(s) {
   return String(s ?? "").replace(/[&<>"]/g,
@@ -187,27 +187,6 @@ const RENDERERS = {
       </div>`));
     return w;
   },
-  themes(note) {
-    const themes = (D.analysis.themes?.themes || []).slice(0, 10);
-    if (!themes.length) return null;
-    const w = section("Top themes", note);
-    const card = el(`<div class="card"></div>`);
-    w.appendChild(card);
-    vegaEmbed(chartDiv(card), {
-      $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-      data: { values: themes }, width: "container", height: themes.length * 32,
-      mark: { type: "bar", color: "#2D5BFF" },
-      encoding: {
-        x: { field: "count", type: "quantitative", title: "Mentions" },
-        y: { field: "theme", type: "nominal", sort: "-x", title: null,
-             axis: { labelLimit: 280 } },
-        tooltip: [{ field: "theme" }, { field: "count" }, { field: "summary" }],
-      }, config: VEGA_CONF,
-    }, { actions: false });
-    themes.forEach(t => card.appendChild(
-      el(`<p><b>${esc(t.theme)}</b> — ${esc(t.summary || "")}</p>`)));
-    return w;
-  },
   emotions(note) {
     const emotions = (D.analysis.themes?.emotions || []).slice(0, 8);
     if (!emotions.length) return null;
@@ -234,6 +213,20 @@ const RENDERERS = {
     ops.forEach(o => card.appendChild(el(
       `<p><span class="badge ${o.strength === "strong" ? "" : "blue"}">${esc(o.strength || "?")}</span>
        ${esc(o.stance)}</p>`)));
+    w.appendChild(card);
+    return w;
+  },
+  insights(note) {
+    const ins = D.analysis.themes?.key_insights || [];
+    if (!ins.length) return null;
+    const w = section("Key insights", note);
+    const card = el(`<div class="card"><ul class="insights">
+      ${ins.map(i => `<li>${esc(i)}</li>`).join("")}</ul></div>`);
+    const c = D.analysis.themes?.controversy_level;
+    if (c) {
+      const text = typeof c === "object" ? `${c.level ?? "?"} — ${c.explanation ?? ""}` : c;
+      card.appendChild(el(`<div class="note"><b>Controversy:</b> ${esc(text)}</div>`));
+    }
     w.appendChild(card);
     return w;
   },
